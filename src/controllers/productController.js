@@ -64,30 +64,25 @@ export const getProductById = async (req, res) => {
   }
 };
 
-// Créer un produit (Admin) - avec tous les détails
+// Créer un produit (Admin)
 export const createProduct = async (req, res) => {
   try {
     const { 
       name, 
-      description, 
-      detailedDescription,
-      composition,
-      careInstructions,
-      brand,
+      description,
       price, 
       originalPrice, 
       categoryId, 
-      groupId, 
       stock 
     } = req.body;
     const slug = name.toLowerCase().replace(/\s+/g, '-');
 
     const result = await pool.query(
       `INSERT INTO products (
-        name, slug, description, detailedDescription, composition, careInstructions, brand,
-        price, originalPrice, categoryId, groupId, stock
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`,
-      [name, slug, description, detailedDescription, composition, careInstructions, brand, price, originalPrice, categoryId, groupId, stock || 0]
+        name, slug, description,
+        price, originalPrice, categoryId, stock
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [name, slug, description, price, originalPrice, categoryId, stock || 0]
     );
 
     res.status(201).json(result.rows[0]);

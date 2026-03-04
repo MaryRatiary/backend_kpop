@@ -1,7 +1,50 @@
 import pool from '../config/database.js';
 
-// Obtenir toutes les catégories racine (niveau 0)
+// Obtenir toutes les catégories avec leurs sous-catégories
 export const getAllCategories = async (req, res) => {
+  try {
+    // Récupérer toutes les catégories (parents et enfants)
+    const result = await pool.query(`
+      SELECT c.*, 
+        COUNT(DISTINCT p.id) as productCount,
+        COUNT(DISTINCT child.id) as childCategoryCount
+      FROM categories c
+      LEFT JOIN products p ON c.id = p.categoryId
+      LEFT JOIN categories child ON c.id = child.parentId
+      GROUP BY c.id
+      ORDER BY c.parentid ASC, c.name ASC
+    `);
+    
+    const allCategories = result.rows;
+    
+    // Créer une map de toutes les catégories
+    const categoryMap = new Map();
+    allCategories.forEach(cat => {
+      categoryMap.set(cat.id, { ...cat, children: [] });
+    });
+    
+    // Construire la hiérarchie
+    const roots = [];
+    allCategories.forEach(cat => {
+      if (cat.parentid) {
+        const parent = categoryMap.get(cat.parentid);
+        if (parent) {
+          parent.children.push(categoryMap.get(cat.id));
+        }
+      } else {
+        roots.push(categoryMap.get(cat.id));
+      }
+    });
+    
+    res.json(roots);
+  } catch (err) {
+    console.error('Get categories error:', err);
+    res.status(500).json({ error: 'Failed to get categories' });
+  }
+};
+
+// Obtenir toutes les catégories (plates - parents ET enfants)
+export const getAllCategoriesFlat = async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT c.*, 
@@ -10,7 +53,6 @@ export const getAllCategories = async (req, res) => {
       FROM categories c
       LEFT JOIN products p ON c.id = p.categoryId
       LEFT JOIN categories child ON c.id = child.parentId
-      WHERE c.parentId IS NULL
       GROUP BY c.id
       ORDER BY c.name ASC
     `);
@@ -166,11 +208,73 @@ export const updateCategory = async (req, res) => {
 export const deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('DELETE FROM categories WHERE id = $1 RETURNING id', [id]);
-
-    if (result.rows.length === 0) {
+    
+    // Vérifier si la catégorie existe
+    const categoryCheck = await pool.query('SELECT id FROM categories WHERE id = $1', [id]);
+    if (categoryCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Category not found' });
     }
+
+    // Supprimer les order_items qui référencent les produits de cette catégorie
+    await pool.query(`
+      DELETE FROM order_items 
+      WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+    `, [id]);
+
+    // Supprimer les images des produits
+    await pool.query(`
+      DELETE FROM product_images 
+      WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+    `, [id]);
+
+    // Supprimer les couleurs des produits
+    await pool.query(`
+      DELETE FROM product_colors 
+      WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+    `, [id]);
+
+    // Supprimer les tailles des produits
+    await pool.query(`
+      DELETE FROM product_sizes 
+      WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+    `, [id]);
+
+    // Supprimer les produits de la catégorie
+    await pool.query('DELETE FROM products WHERE categoryId = $1', [id]);
+
+    // Supprimer les sous-catégories et leurs produits
+    const subcategories = await pool.query('SELECT id FROM categories WHERE parentId = $1', [id]);
+    
+    for (const subcat of subcategories.rows) {
+      // Supprimer les order_items des sous-catégories
+      await pool.query(`
+        DELETE FROM order_items 
+        WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+      `, [subcat.id]);
+
+      await pool.query(`
+        DELETE FROM product_images 
+        WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+      `, [subcat.id]);
+
+      await pool.query(`
+        DELETE FROM product_colors 
+        WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+      `, [subcat.id]);
+
+      await pool.query(`
+        DELETE FROM product_sizes 
+        WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+      `, [subcat.id]);
+
+      await pool.query('DELETE FROM products WHERE categoryId = $1', [subcat.id]);
+    }
+
+    // Supprimer les sous-catégories
+    await pool.query('DELETE FROM categories WHERE parentId = $1', [id]);
+
+    // Supprimer la catégorie principale
+    await pool.query('DELETE FROM categories WHERE id = $1', [id]);
 
     res.json({ message: 'Category deleted successfully' });
   } catch (err) {
