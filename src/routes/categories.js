@@ -5,7 +5,8 @@ import {
   getChildCategories,
   createCategory, 
   updateCategory, 
-  deleteCategory 
+  deleteCategory,
+  reorderCategory
 } from '../controllers/categoryController.js';
 import { authenticateToken, authorizeAdmin } from '../middleware/auth.js';
 
@@ -19,6 +20,7 @@ router.get('/:parentId/children', getChildCategories);
 // Routes admin
 router.post('/', authenticateToken, authorizeAdmin, createCategory);
 router.put('/:id', authenticateToken, authorizeAdmin, updateCategory);
+router.put('/:id/reorder', authenticateToken, authorizeAdmin, reorderCategory);
 router.delete('/:id', authenticateToken, authorizeAdmin, deleteCategory);
 
 export default router;

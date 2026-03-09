@@ -4,7 +4,21 @@ import pool from '../config/database.js';
 export const getAllProducts = async (req, res) => {
   try {
     const { categoryId, groupId, featured, limit = 50, offset = 0 } = req.query;
-    let query = 'SELECT p.*, c.name as categoryName, g.name as groupName FROM products p LEFT JOIN categories c ON p.categoryId = c.id LEFT JOIN kpop_groups g ON p.groupId = g.id WHERE 1=1';
+    let query = `
+      SELECT 
+        p.*,
+        c.name as categoryName, 
+        g.name as groupName,
+        (SELECT imageUrl FROM product_images WHERE productId = p.id AND isMainImage = true ORDER BY "order" ASC LIMIT 1) as image,
+        (SELECT imageUrl FROM product_images WHERE productId = p.id AND isHoverImage = true ORDER BY "order" ASC LIMIT 1) as hoverImage,
+        (SELECT json_agg(imageUrl ORDER BY "order" ASC) FROM product_images WHERE productId = p.id) as images,
+        (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
+        (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
+      FROM products p 
+      LEFT JOIN categories c ON p.categoryId = c.id 
+      LEFT JOIN kpop_groups g ON p.groupId = g.id 
+      WHERE 1=1
+    `;
     const params = [];
 
     if (categoryId) {
@@ -35,7 +49,12 @@ export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
     const product = await pool.query(`
-      SELECT p.*, c.name as categoryName, g.name as groupName
+      SELECT p.*, 
+             c.name as categoryName, 
+             g.name as groupName,
+             (SELECT json_agg(imageUrl ORDER BY "order" ASC) FROM product_images WHERE productId = p.id) as images,
+             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
+             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
       FROM products p
       LEFT JOIN categories c ON p.categoryId = c.id
       LEFT JOIN kpop_groups g ON p.groupId = g.id
@@ -46,16 +65,10 @@ export const getProductById = async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    const images = await pool.query('SELECT * FROM product_images WHERE productId = $1 ORDER BY "order" ASC', [id]);
-    const sizes = await pool.query('SELECT * FROM product_sizes WHERE productId = $1', [id]);
-    const colors = await pool.query('SELECT * FROM product_colors WHERE productId = $1', [id]);
     const reviews = await pool.query('SELECT * FROM reviews WHERE productId = $1 ORDER BY createdAt DESC', [id]);
 
     res.json({
       ...product.rows[0],
-      images: images.rows,
-      sizes: sizes.rows,
-      colors: colors.rows,
       reviews: reviews.rows
     });
   } catch (err) {
@@ -73,19 +86,56 @@ export const createProduct = async (req, res) => {
       price, 
       originalPrice, 
       categoryId, 
-      stock 
+      stock,
+      brand,
+      material,
+      careInstructions,
+      sizes,
+      colors
     } = req.body;
     const slug = name.toLowerCase().replace(/\s+/g, '-');
 
     const result = await pool.query(
       `INSERT INTO products (
         name, slug, description,
-        price, originalPrice, categoryId, stock
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [name, slug, description, price, originalPrice, categoryId, stock || 0]
+        price, originalPrice, categoryId, stock,
+        brand, material, careInstructions
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      [name, slug, description, price, originalPrice, categoryId, stock || 0, brand, material, careInstructions]
     );
 
-    res.status(201).json(result.rows[0]);
+    const productId = result.rows[0].id;
+
+    // Ajouter les tailles si fournies
+    if (sizes && Array.isArray(sizes) && sizes.length > 0) {
+      for (const size of sizes) {
+        await pool.query(
+          'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3) ON CONFLICT (productId, size) DO NOTHING',
+          [productId, size, 0]
+        );
+      }
+    }
+
+    // Ajouter les couleurs si fournies
+    if (colors && Array.isArray(colors) && colors.length > 0) {
+      for (const color of colors) {
+        await pool.query(
+          'INSERT INTO product_colors (productId, colorName, colorHex, stock) VALUES ($1, $2, $3, $4) ON CONFLICT (productId, colorName) DO NOTHING',
+          [productId, color.name || color, color.hex || '#000000', 0]
+        );
+      }
+    }
+
+    // Récupérer le produit complète avec ses relations
+    const completeProduct = await pool.query(`
+      SELECT p.*, 
+             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
+             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
+      FROM products p
+      WHERE p.id = $1
+    `, [productId]);
+
+    res.status(201).json(completeProduct.rows[0]);
   } catch (err) {
     console.error('Create product error:', err);
     res.status(500).json({ error: 'Failed to create product' });
@@ -99,17 +149,15 @@ export const updateProduct = async (req, res) => {
     const { 
       name, 
       description, 
-      detailedDescription,
-      composition,
-      careInstructions,
       brand,
+      material,
+      careInstructions,
       price, 
       originalPrice, 
       stock, 
-      featured, 
-      sales,
-      rating,
-      reviews
+      featured,
+      sizes,
+      colors
     } = req.body;
     const slug = name ? name.toLowerCase().replace(/\s+/g, '-') : undefined;
 
@@ -121,25 +169,21 @@ export const updateProduct = async (req, res) => {
       updates.push(`name = $${paramIndex++}`);
       params.push(name);
     }
-    if (description) {
+    if (description !== undefined) {
       updates.push(`description = $${paramIndex++}`);
       params.push(description);
     }
-    if (detailedDescription) {
-      updates.push(`detailedDescription = $${paramIndex++}`);
-      params.push(detailedDescription);
-    }
-    if (composition) {
-      updates.push(`composition = $${paramIndex++}`);
-      params.push(composition);
-    }
-    if (careInstructions) {
-      updates.push(`careInstructions = $${paramIndex++}`);
-      params.push(careInstructions);
-    }
-    if (brand) {
+    if (brand !== undefined) {
       updates.push(`brand = $${paramIndex++}`);
       params.push(brand);
+    }
+    if (material !== undefined) {
+      updates.push(`material = $${paramIndex++}`);
+      params.push(material);
+    }
+    if (careInstructions !== undefined) {
+      updates.push(`careInstructions = $${paramIndex++}`);
+      params.push(careInstructions);
     }
     if (price !== undefined) {
       updates.push(`price = $${paramIndex++}`);
@@ -156,18 +200,6 @@ export const updateProduct = async (req, res) => {
     if (featured !== undefined) {
       updates.push(`featured = $${paramIndex++}`);
       params.push(featured);
-    }
-    if (sales !== undefined) {
-      updates.push(`sales = $${paramIndex++}`);
-      params.push(sales);
-    }
-    if (rating !== undefined) {
-      updates.push(`rating = $${paramIndex++}`);
-      params.push(rating);
-    }
-    if (reviews !== undefined) {
-      updates.push(`reviews = $${paramIndex++}`);
-      params.push(reviews);
     }
     if (slug) {
       updates.push(`slug = $${paramIndex++}`);
@@ -188,7 +220,44 @@ export const updateProduct = async (req, res) => {
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    res.json(result.rows[0]);
+    // Mettre à jour les tailles si fournies
+    if (sizes && Array.isArray(sizes) && sizes.length > 0) {
+      // Supprimer les anciennes tailles
+      await pool.query('DELETE FROM product_sizes WHERE productId = $1', [id]);
+      
+      // Ajouter les nouvelles tailles
+      for (const size of sizes) {
+        await pool.query(
+          'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3)',
+          [id, size, 0]
+        );
+      }
+    }
+
+    // Mettre à jour les couleurs si fournies
+    if (colors && Array.isArray(colors) && colors.length > 0) {
+      // Supprimer les anciennes couleurs
+      await pool.query('DELETE FROM product_colors WHERE productId = $1', [id]);
+      
+      // Ajouter les nouvelles couleurs
+      for (const color of colors) {
+        await pool.query(
+          'INSERT INTO product_colors (productId, colorName, colorHex, stock) VALUES ($1, $2, $3, $4)',
+          [id, color.name || color, color.hex || '#000000', 0]
+        );
+      }
+    }
+
+    // Récupérer le produit complète avec ses relations
+    const completeProduct = await pool.query(`
+      SELECT p.*, 
+             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
+             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
+      FROM products p
+      WHERE p.id = $1
+    `, [id]);
+
+    res.json(completeProduct.rows[0]);
   } catch (err) {
     console.error('Update product error:', err);
     res.status(500).json({ error: 'Failed to update product' });

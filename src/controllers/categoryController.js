@@ -5,14 +5,14 @@ export const getAllCategories = async (req, res) => {
   try {
     // Récupérer toutes les catégories (parents et enfants)
     const result = await pool.query(`
-      SELECT c.*, 
+      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
         COUNT(DISTINCT p.id) as productCount,
         COUNT(DISTINCT child.id) as childCategoryCount
       FROM categories c
       LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories child ON c.id = child.parentId
-      GROUP BY c.id
-      ORDER BY c.parentid ASC, c.name ASC
+      LEFT JOIN categories child ON c.id = child.parentid
+      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      ORDER BY c.parentid ASC, c."order" ASC, c.name ASC
     `);
     
     const allCategories = result.rows;
@@ -39,7 +39,7 @@ export const getAllCategories = async (req, res) => {
     res.json(roots);
   } catch (err) {
     console.error('Get categories error:', err);
-    res.status(500).json({ error: 'Failed to get categories' });
+    res.status(500).json({ error: 'Failed to get categories', details: err.message });
   }
 };
 
@@ -47,19 +47,19 @@ export const getAllCategories = async (req, res) => {
 export const getAllCategoriesFlat = async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT c.*, 
+      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
         COUNT(DISTINCT p.id) as productCount,
         COUNT(DISTINCT child.id) as childCategoryCount
       FROM categories c
       LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories child ON c.id = child.parentId
-      GROUP BY c.id
-      ORDER BY c.name ASC
+      LEFT JOIN categories child ON c.id = child.parentid
+      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      ORDER BY c.parentid ASC, c."order" ASC, c.name ASC
     `);
     res.json(result.rows);
   } catch (err) {
     console.error('Get categories error:', err);
-    res.status(500).json({ error: 'Failed to get categories' });
+    res.status(500).json({ error: 'Failed to get categories', details: err.message });
   }
 };
 
@@ -68,28 +68,34 @@ export const getCategoryWithChildren = async (req, res) => {
   try {
     const { id } = req.params;
     
-    const category = await pool.query('SELECT * FROM categories WHERE id = $1', [id]);
+    const category = await pool.query(`
+      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt 
+      FROM categories c
+      WHERE c.id = $1
+    `, [id]);
+    
     if (category.rows.length === 0) {
       return res.status(404).json({ error: 'Category not found' });
     }
 
     const children = await pool.query(`
-      SELECT c.*, 
-        COUNT(DISTINCT p.id) as productCount,
-        COUNT(DISTINCT child.id) as childCategoryCount
+      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+        COUNT(DISTINCT p.id)::integer as productCount,
+        COUNT(DISTINCT child.id)::integer as childCategoryCount
       FROM categories c
       LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories child ON c.id = child.parentId
-      WHERE c.parentId = $1
-      GROUP BY c.id
-      ORDER BY c.name ASC
+      LEFT JOIN categories child ON c.id = child.parentid
+      WHERE c.parentid = $1
+      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      ORDER BY c."order" ASC, c.name ASC
     `, [id]);
 
     const products = await pool.query(`
-      SELECT id, name, slug, price, originalPrice, stock, featured, image
-      FROM products 
-      WHERE categoryId = $1
-      ORDER BY name ASC
+      SELECT p.id, p.name, p.slug, p.price, p.originalPrice, p.stock, p.featured, p.categoryId,
+        (SELECT imageUrl FROM product_images WHERE productId = p.id AND isMainImage = true LIMIT 1) as image
+      FROM products p
+      WHERE p.categoryId = $1
+      ORDER BY p.name ASC
     `, [id]);
 
     res.json({
@@ -99,7 +105,7 @@ export const getCategoryWithChildren = async (req, res) => {
     });
   } catch (err) {
     console.error('Get category error:', err);
-    res.status(500).json({ error: 'Failed to get category' });
+    res.status(500).json({ error: 'Failed to get category', details: err.message });
   }
 };
 
@@ -109,21 +115,21 @@ export const getChildCategories = async (req, res) => {
     const { parentId } = req.params;
     
     const result = await pool.query(`
-      SELECT c.*, 
-        COUNT(DISTINCT p.id) as productCount,
-        COUNT(DISTINCT child.id) as childCategoryCount
+      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+        COUNT(DISTINCT p.id)::integer as productCount,
+        COUNT(DISTINCT child.id)::integer as childCategoryCount
       FROM categories c
       LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories child ON c.id = child.parentId
-      WHERE c.parentId = $1
-      GROUP BY c.id
-      ORDER BY c.name ASC
+      LEFT JOIN categories child ON c.id = child.parentid
+      WHERE c.parentid = $1
+      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      ORDER BY c."order" ASC, c.name ASC
     `, [parentId]);
     
     res.json(result.rows);
   } catch (err) {
     console.error('Get child categories error:', err);
-    res.status(500).json({ error: 'Failed to get child categories' });
+    res.status(500).json({ error: 'Failed to get child categories', details: err.message });
   }
 };
 
@@ -280,5 +286,83 @@ export const deleteCategory = async (req, res) => {
   } catch (err) {
     console.error('Delete category error:', err);
     res.status(500).json({ error: 'Failed to delete category' });
+  }
+};
+
+// Réorganiser une catégorie (Admin) - Drag and drop
+export const reorderCategory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { targetCategoryId } = req.body;
+
+    console.log(`🔄 Reorder request: source=${id}, target=${targetCategoryId}`);
+
+    // Récupérer les deux catégories
+    const sourceCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [id]);
+    const targetCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [targetCategoryId]);
+
+    if (sourceCategory.rows.length === 0 || targetCategory.rows.length === 0) {
+      console.log('❌ One of the categories not found');
+      return res.status(404).json({ error: 'Category not found' });
+    }
+
+    const source = sourceCategory.rows[0];
+    const target = targetCategory.rows[0];
+
+    console.log(`Source: id=${source.id}, parentId=${source.parentid}, order=${source.order}`);
+    console.log(`Target: id=${target.id}, parentId=${target.parentid}, order=${target.order}`);
+
+    // Les deux catégories doivent être au même niveau (même parentId)
+    if (source.parentid !== target.parentid) {
+      console.log(`❌ Different levels: source.parentid=${source.parentid}, target.parentid=${target.parentid}`);
+      return res.status(400).json({ error: 'Categories must be at the same level to reorder' });
+    }
+
+    // Récupérer toutes les catégories au même niveau, triées par "order"
+    const siblingCategories = await pool.query(
+      'SELECT id, "order" FROM categories WHERE parentId IS NOT DISTINCT FROM $1 ORDER BY "order" ASC, id ASC',
+      [source.parentid]
+    );
+
+    const siblings = siblingCategories.rows;
+    console.log(`📋 Siblings at level: ${siblings.map(s => `id=${s.id},order=${s.order}`).join(', ')}`);
+
+    const sourceIndex = siblings.findIndex(s => s.id === source.id);
+    const targetIndex = siblings.findIndex(s => s.id === target.id);
+
+    console.log(`📍 sourceIndex=${sourceIndex}, targetIndex=${targetIndex}`);
+
+    // Créer un nouvel tableau ordonné en déplaçant l'élément source
+    let newOrder = siblings.map(s => s.id);
+    
+    if (sourceIndex !== targetIndex) {
+      // Retirer l'élément source
+      newOrder.splice(sourceIndex, 1);
+      // L'insérer à la position cible
+      if (sourceIndex < targetIndex) {
+        newOrder.splice(targetIndex - 1, 0, source.id);
+      } else {
+        newOrder.splice(targetIndex, 0, source.id);
+      }
+    }
+
+    console.log(`📊 New order: ${newOrder.join(', ')}`);
+
+    // Mettre à jour les positions avec des valeurs séquentielles
+    for (let i = 0; i < newOrder.length; i++) {
+      const newOrderValue = i + 1; // Commencer à 1
+      console.log(`  Setting id=${newOrder[i]} to order=${newOrderValue}`);
+      await pool.query('UPDATE categories SET "order" = $1 WHERE id = $2', [newOrderValue, newOrder[i]]);
+    }
+
+    console.log(`✅ Reorder completed successfully`);
+
+    // Récupérer la catégorie mise à jour
+    const updatedCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [id]);
+
+    res.json(updatedCategory.rows[0]);
+  } catch (err) {
+    console.error('❌ Reorder category error:', err);
+    res.status(500).json({ error: 'Failed to reorder category', details: err.message });
   }
 };

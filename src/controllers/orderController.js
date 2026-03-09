@@ -4,7 +4,21 @@ import pool from '../config/database.js';
 export const createOrder = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { items, shippingAddress, paymentMethod } = req.body;
+    const { 
+      items, 
+      shippingAddress, 
+      paymentMethod,
+      firstName,
+      lastName,
+      email,
+      phone,
+      city,
+      postalCode,
+      country,
+      latitude,
+      longitude,
+      notes
+    } = req.body;
 
     // Calculer le prix total
     let totalPrice = 0;
@@ -21,12 +35,44 @@ export const createOrder = async (req, res) => {
       itemsData.push({ ...item, price });
     }
 
-    // Créer la commande
+    // Créer la commande avec tous les détails
     const order = await pool.query(
-      `INSERT INTO orders (userId, totalPrice, shippingAddress, paymentMethod, status, paymentStatus)
-       VALUES ($1, $2, $3, $4, 'pending', 'unpaid')
+      `INSERT INTO orders (
+        userId, 
+        totalPrice, 
+        shippingAddress, 
+        paymentMethod, 
+        status, 
+        paymentStatus,
+        firstName,
+        lastName,
+        email,
+        phone,
+        city,
+        postalCode,
+        country,
+        latitude,
+        longitude,
+        notes
+      )
+       VALUES ($1, $2, $3, $4, 'pending', 'unpaid', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
-      [userId, totalPrice, shippingAddress, paymentMethod]
+      [
+        userId, 
+        totalPrice, 
+        shippingAddress, 
+        paymentMethod,
+        firstName,
+        lastName,
+        email,
+        phone,
+        city,
+        postalCode,
+        country,
+        latitude,
+        longitude,
+        notes
+      ]
     );
 
     const orderId = order.rows[0].id;
@@ -75,7 +121,7 @@ export const getUserOrders = async (req, res) => {
   }
 };
 
-// Obtenir les détails d'une commande
+// Obtenir les détails complets d'une commande (utilisateur)
 export const getOrderById = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -91,10 +137,46 @@ export const getOrderById = async (req, res) => {
     }
 
     const items = await pool.query(
-      `SELECT oi.*, p.name, p.slug, p.image
+      `SELECT oi.*, p.name, p.slug, p.price, pi.imageUrl
        FROM order_items oi
        JOIN products p ON oi.productId = p.id
-       WHERE oi.orderId = $1`,
+       LEFT JOIN product_images pi ON p.id = pi.productId AND pi.isMainImage = true
+       WHERE oi.orderId = $1
+       ORDER BY oi.id`,
+      [orderId]
+    );
+
+    res.json({
+      ...order.rows[0],
+      items: items.rows
+    });
+  } catch (err) {
+    console.error('Get order error:', err);
+    res.status(500).json({ error: 'Failed to get order' });
+  }
+};
+
+// Obtenir les détails complets d'une commande (ADMIN)
+export const getOrderByIdAdmin = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await pool.query(
+      'SELECT * FROM orders WHERE id = $1',
+      [orderId]
+    );
+
+    if (order.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    const items = await pool.query(
+      `SELECT oi.*, p.name, p.slug, p.price, pi.imageUrl
+       FROM order_items oi
+       JOIN products p ON oi.productId = p.id
+       LEFT JOIN product_images pi ON p.id = pi.productId AND pi.isMainImage = true
+       WHERE oi.orderId = $1
+       ORDER BY oi.id`,
       [orderId]
     );
 
@@ -147,5 +229,34 @@ export const cancelOrder = async (req, res) => {
   } catch (err) {
     console.error('Cancel order error:', err);
     res.status(500).json({ error: 'Failed to cancel order' });
+  }
+};
+
+// Mettre à jour le statut d'une commande (ADMIN)
+export const updateOrderStatus = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { status, paymentStatus, trackingNumber, notes } = req.body;
+
+    const result = await pool.query(
+      `UPDATE orders 
+       SET status = COALESCE($1, status),
+           paymentStatus = COALESCE($2, paymentStatus),
+           trackingNumber = COALESCE($3, trackingNumber),
+           notes = COALESCE($4, notes),
+           updatedAt = CURRENT_TIMESTAMP 
+       WHERE id = $5 
+       RETURNING *`,
+      [status, paymentStatus, trackingNumber, notes, orderId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    res.json({ message: 'Order updated', order: result.rows[0] });
+  } catch (err) {
+    console.error('Update order error:', err);
+    res.status(500).json({ error: 'Failed to update order' });
   }
 };
