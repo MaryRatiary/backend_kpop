@@ -16,6 +16,7 @@ RUN npm ci --only=production && \
 # Copier le code source
 COPY src ./src
 COPY migrations ./migrations
+COPY scripts ./scripts
 
 # Port d'exposition
 EXPOSE 5000
@@ -24,5 +25,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:5000/api/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
-# Commande de démarrage
-CMD ["npm", "start"]
+# Script d'entrée qui exécute les migrations puis démarre l'app
+ENTRYPOINT ["sh", "-c", "node scripts/init-db.js && npm start"]
