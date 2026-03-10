@@ -56,7 +56,7 @@ export const createOrder = async (req, res) => {
       itemsData.push({ ...item, price, productId: parseInt(item.productId) });
     }
 
-    // Créer la commande avec tous les détails
+    // Créer la commande avec tous les détails (utiliser les noms corrects de colonnes)
     const order = await pool.query(
       `INSERT INTO orders (
         userId, 
@@ -65,12 +65,12 @@ export const createOrder = async (req, res) => {
         paymentMethod, 
         status, 
         paymentStatus,
-        firstName,
-        lastName,
+        "firstName",
+        "lastName",
         email,
         phone,
         city,
-        postalCode,
+        "postalCode",
         country,
         latitude,
         longitude,

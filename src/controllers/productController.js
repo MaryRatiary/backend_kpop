@@ -105,7 +105,15 @@ export const createProduct = async (req, res) => {
       return res.status(400).json({ error: 'Le prix doit être un nombre positif' });
     }
 
-    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    // Générer un slug unique avec timestamp si nécessaire
+    let slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    
+    // Vérifier si ce slug existe déjà
+    const existingSlug = await pool.query('SELECT id FROM products WHERE slug = $1', [slug]);
+    if (existingSlug.rows.length > 0) {
+      // Ajouter un timestamp pour rendre le slug unique
+      slug = slug + '-' + Math.floor(Date.now() / 1000);
+    }
 
     const result = await pool.query(
       `INSERT INTO products (
@@ -176,7 +184,17 @@ export const updateProduct = async (req, res) => {
       return res.status(400).json({ error: 'Le prix doit être un nombre positif' });
     }
 
-    const slug = name ? name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : undefined;
+    let slug = undefined;
+    if (name) {
+      slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      
+      // Vérifier si ce slug existe déjà (et qu'il n'appartient pas au produit actuel)
+      const existingSlug = await pool.query('SELECT id FROM products WHERE slug = $1 AND id != $2', [slug, parseInt(id)]);
+      if (existingSlug.rows.length > 0) {
+        // Ajouter un timestamp pour rendre le slug unique
+        slug = slug + '-' + Math.floor(Date.now() / 1000);
+      }
+    }
 
     const updates = [];
     const params = [];
@@ -311,6 +329,9 @@ export const addProductImage = async (req, res) => {
       return res.status(404).json({ error: 'Produit non trouvé' });
     }
 
+    // PostgreSQL TEXT peut accepter des données très grandes (jusqu'à environ 1GB)
+    // Pas besoin de valider la longueur pour les images Base64
+    
     const result = await pool.query(
       'INSERT INTO product_images (productId, imageUrl, isMainImage, isHoverImage, "order") VALUES ($1, $2, $3, $4, $5) RETURNING *',
       [parseInt(productId), imageUrl, isMainImage || false, isHoverImage || false, order || 0]
@@ -319,6 +340,16 @@ export const addProductImage = async (req, res) => {
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Add product image error:', err);
+    
+    // Gérer les erreurs spécifiques
+    if (err.code === '22001') {
+      return res.status(400).json({ error: 'L\'URL de l\'image est trop longue pour la base de données' });
+    }
+    
+    if (err.message && err.message.includes('too long')) {
+      return res.status(400).json({ error: 'L\'image est trop volumineux' });
+    }
+    
     res.status(500).json({ error: 'Erreur lors de l\'ajout de l\'image' });
   }
 };
