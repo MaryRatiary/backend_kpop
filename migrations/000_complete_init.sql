@@ -6,27 +6,12 @@
 -- Date: 2026-03-09
 
 -- ============================================================
--- 1. DROP DES TABLES (nettoyage complet)
+-- 1. CRÉATION DES TABLES (si elles n'existent pas)
 -- ============================================================
-
-DROP TABLE IF EXISTS order_items CASCADE;
-DROP TABLE IF EXISTS orders CASCADE;
-DROP TABLE IF EXISTS reviews CASCADE;
-DROP TABLE IF EXISTS product_colors CASCADE;
-DROP TABLE IF EXISTS product_sizes CASCADE;
-DROP TABLE IF EXISTS product_images CASCADE;
-DROP TABLE IF EXISTS products CASCADE;
-DROP TABLE IF EXISTS subcategories CASCADE;
-DROP TABLE IF EXISTS categories CASCADE;
-DROP TABLE IF EXISTS kpop_groups CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-
--- ============================================================
--- 2. CRÉATION DES TABLES
--- ============================================================
+-- NOTE: Utilisation de CREATE TABLE IF NOT EXISTS pour préserver les données existantes
 
 -- Table des utilisateurs
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
   password VARCHAR(255) NOT NULL,
@@ -43,7 +28,7 @@ CREATE TABLE users (
 );
 
 -- Table des groupes KPOP
-CREATE TABLE kpop_groups (
+CREATE TABLE IF NOT EXISTS kpop_groups (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) UNIQUE NOT NULL,
   slug VARCHAR(255) UNIQUE NOT NULL,
@@ -54,7 +39,7 @@ CREATE TABLE kpop_groups (
 );
 
 -- Table des catégories
-CREATE TABLE categories (
+CREATE TABLE IF NOT EXISTS categories (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   slug VARCHAR(255) NOT NULL,
@@ -69,7 +54,7 @@ CREATE TABLE categories (
 );
 
 -- Table des sous-catégories
-CREATE TABLE subcategories (
+CREATE TABLE IF NOT EXISTS subcategories (
   id SERIAL PRIMARY KEY,
   categoryId INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
@@ -82,7 +67,7 @@ CREATE TABLE subcategories (
 );
 
 -- Table des produits
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   slug VARCHAR(255) UNIQUE NOT NULL,
@@ -101,7 +86,7 @@ CREATE TABLE products (
 );
 
 -- Table des images de produits
-CREATE TABLE product_images (
+CREATE TABLE IF NOT EXISTS product_images (
   id SERIAL PRIMARY KEY,
   productId INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   imageUrl TEXT NOT NULL,
@@ -112,7 +97,7 @@ CREATE TABLE product_images (
 );
 
 -- Table des tailles
-CREATE TABLE product_sizes (
+CREATE TABLE IF NOT EXISTS product_sizes (
   id SERIAL PRIMARY KEY,
   productId INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   size VARCHAR(50) NOT NULL,
@@ -123,7 +108,7 @@ CREATE TABLE product_sizes (
 );
 
 -- Table des couleurs
-CREATE TABLE product_colors (
+CREATE TABLE IF NOT EXISTS product_colors (
   id SERIAL PRIMARY KEY,
   productId INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   colorName VARCHAR(100) NOT NULL,
@@ -135,7 +120,7 @@ CREATE TABLE product_colors (
 );
 
 -- Table des avis
-CREATE TABLE reviews (
+CREATE TABLE IF NOT EXISTS reviews (
   id SERIAL PRIMARY KEY,
   productId INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
   userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -146,7 +131,7 @@ CREATE TABLE reviews (
 );
 
 -- Table des commandes (avec détails complets de livraison)
-CREATE TABLE orders (
+CREATE TABLE IF NOT EXISTS orders (
   id SERIAL PRIMARY KEY,
   userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   totalPrice DECIMAL(10, 2) NOT NULL,
@@ -170,7 +155,7 @@ CREATE TABLE orders (
 );
 
 -- Table des articles de commande
-CREATE TABLE order_items (
+CREATE TABLE IF NOT EXISTS order_items (
   id SERIAL PRIMARY KEY,
   orderId INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
   productId INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -182,30 +167,30 @@ CREATE TABLE order_items (
 );
 
 -- ============================================================
--- 3. CRÉATION DES INDEX
+-- 2. CRÉATION DES INDEX (si elles n'existent pas)
 -- ============================================================
 
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_role ON users(role);
-CREATE INDEX idx_categories_parentId ON categories(parentId);
-CREATE INDEX idx_categories_slug ON categories(slug);
-CREATE INDEX idx_subcategories_categoryId ON subcategories(categoryId);
-CREATE INDEX idx_products_categoryId ON products(categoryId);
-CREATE INDEX idx_products_subcategoryId ON products(subcategoryId);
-CREATE INDEX idx_products_groupId ON products(groupId);
-CREATE INDEX idx_products_slug ON products(slug);
-CREATE INDEX idx_product_sizes_productId ON product_sizes(productId);
-CREATE INDEX idx_product_colors_productId ON product_colors(productId);
-CREATE INDEX idx_orders_userId ON orders(userId);
-CREATE INDEX idx_orders_email ON orders(email);
-CREATE INDEX idx_orders_status ON orders(status);
-CREATE INDEX idx_orders_createdAt ON orders(createdAt);
-CREATE INDEX idx_order_items_orderId ON order_items(orderId);
-CREATE INDEX idx_reviews_productId ON reviews(productId);
-CREATE INDEX idx_reviews_userId ON reviews(userId);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_categories_parentId ON categories(parentId);
+CREATE INDEX IF NOT EXISTS idx_categories_slug ON categories(slug);
+CREATE INDEX IF NOT EXISTS idx_subcategories_categoryId ON subcategories(categoryId);
+CREATE INDEX IF NOT EXISTS idx_products_categoryId ON products(categoryId);
+CREATE INDEX IF NOT EXISTS idx_products_subcategoryId ON products(subcategoryId);
+CREATE INDEX IF NOT EXISTS idx_products_groupId ON products(groupId);
+CREATE INDEX IF NOT EXISTS idx_products_slug ON products(slug);
+CREATE INDEX IF NOT EXISTS idx_product_sizes_productId ON product_sizes(productId);
+CREATE INDEX IF NOT EXISTS idx_product_colors_productId ON product_colors(productId);
+CREATE INDEX IF NOT EXISTS idx_orders_userId ON orders(userId);
+CREATE INDEX IF NOT EXISTS idx_orders_email ON orders(email);
+CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+CREATE INDEX IF NOT EXISTS idx_orders_createdAt ON orders(createdAt);
+CREATE INDEX IF NOT EXISTS idx_order_items_orderId ON order_items(orderId);
+CREATE INDEX IF NOT EXISTS idx_reviews_productId ON reviews(productId);
+CREATE INDEX IF NOT EXISTS idx_reviews_userId ON reviews(userId);
 
 -- ============================================================
--- 4. INSERTION UTILISATEUR ADMIN PAR DÉFAUT
+-- 3. INSERTION UTILISATEUR ADMIN PAR DÉFAUT
 -- ============================================================
 
 -- Insérer un utilisateur admin (password: admin123)
@@ -221,7 +206,7 @@ VALUES (
 ON CONFLICT (email) DO NOTHING;
 
 -- ============================================================
--- 5. COMMENTAIRES ET DOCUMENTATION
+-- 4. COMMENTAIRES ET DOCUMENTATION
 -- ============================================================
 COMMENT ON TABLE users IS 'Stocke les informations des utilisateurs (clients et admins)';
 COMMENT ON TABLE orders IS 'Stocke les commandes avec tous les détails de livraison et coordonnées GPS';
@@ -232,9 +217,10 @@ COMMENT ON TABLE product_sizes IS 'Stocke les tailles disponibles par produit';
 COMMENT ON TABLE product_colors IS 'Stocke les couleurs disponibles par produit';
 
 -- ============================================================
--- 6. CONFIRMATION
+-- 5. CONFIRMATION
 -- ============================================================
 -- Migration complétée avec succès!
 -- Tables créées: users, kpop_groups, categories, subcategories, products, product_images, product_sizes, product_colors, reviews, orders, order_items
 -- Indexes créés: 17 index pour optimiser les requêtes
 -- Utilisateur admin créé: admin@sinoa.com
+-- IMPORTANT: Cette migration préserve les données existantes (CREATE IF NOT EXISTS)
