@@ -23,24 +23,24 @@ export const getAllProducts = async (req, res) => {
 
     if (categoryId) {
       query += ' AND p.categoryId = $' + (params.length + 1);
-      params.push(categoryId);
+      params.push(parseInt(categoryId));
     }
     if (groupId) {
       query += ' AND p.groupId = $' + (params.length + 1);
-      params.push(groupId);
+      params.push(parseInt(groupId));
     }
     if (featured) {
       query += ' AND p.featured = true';
     }
 
     query += ' ORDER BY p.createdAt DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
-    params.push(limit, offset);
+    params.push(Math.min(parseInt(limit) || 50, 100), parseInt(offset) || 0);
 
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (err) {
     console.error('Get products error:', err);
-    res.status(500).json({ error: 'Failed to get products' });
+    res.status(500).json({ error: 'Erreur lors de la récupération des produits' });
   }
 };
 
@@ -48,6 +48,11 @@ export const getAllProducts = async (req, res) => {
 export const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ error: 'ID de produit invalide' });
+    }
+
     const product = await pool.query(`
       SELECT p.*, 
              c.name as categoryName, 
@@ -59,10 +64,10 @@ export const getProductById = async (req, res) => {
       LEFT JOIN categories c ON p.categoryId = c.id
       LEFT JOIN kpop_groups g ON p.groupId = g.id
       WHERE p.id = $1
-    `, [id]);
+    `, [parseInt(id)]);
 
     if (product.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
+      return res.status(404).json({ error: 'Produit non trouvé' });
     }
 
     const reviews = await pool.query('SELECT * FROM reviews WHERE productId = $1 ORDER BY createdAt DESC', [id]);
@@ -73,7 +78,7 @@ export const getProductById = async (req, res) => {
     });
   } catch (err) {
     console.error('Get product error:', err);
-    res.status(500).json({ error: 'Failed to get product' });
+    res.status(500).json({ error: 'Erreur lors de la récupération du produit' });
   }
 };
 
@@ -87,21 +92,27 @@ export const createProduct = async (req, res) => {
       originalPrice, 
       categoryId, 
       stock,
-      brand,
-      material,
-      careInstructions,
       sizes,
       colors
     } = req.body;
-    const slug = name.toLowerCase().replace(/\s+/g, '-');
+
+    // Validation
+    if (!name || !price) {
+      return res.status(400).json({ error: 'Le nom et le prix sont obligatoires' });
+    }
+
+    if (isNaN(price) || price < 0) {
+      return res.status(400).json({ error: 'Le prix doit être un nombre positif' });
+    }
+
+    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
     const result = await pool.query(
       `INSERT INTO products (
         name, slug, description,
-        price, originalPrice, categoryId, stock,
-        brand, material, careInstructions
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
-      [name, slug, description, price, originalPrice, categoryId, stock || 0, brand, material, careInstructions]
+        price, originalPrice, categoryId, stock
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [name, slug, description || null, price, originalPrice || null, categoryId || null, stock || 0]
     );
 
     const productId = result.rows[0].id;
@@ -138,7 +149,7 @@ export const createProduct = async (req, res) => {
     res.status(201).json(completeProduct.rows[0]);
   } catch (err) {
     console.error('Create product error:', err);
-    res.status(500).json({ error: 'Failed to create product' });
+    res.status(500).json({ error: 'Erreur lors de la création du produit' });
   }
 };
 
@@ -148,10 +159,7 @@ export const updateProduct = async (req, res) => {
     const { id } = req.params;
     const { 
       name, 
-      description, 
-      brand,
-      material,
-      careInstructions,
+      description,
       price, 
       originalPrice, 
       stock, 
@@ -159,7 +167,16 @@ export const updateProduct = async (req, res) => {
       sizes,
       colors
     } = req.body;
-    const slug = name ? name.toLowerCase().replace(/\s+/g, '-') : undefined;
+
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ error: 'ID de produit invalide' });
+    }
+
+    if (price !== undefined && (isNaN(price) || price < 0)) {
+      return res.status(400).json({ error: 'Le prix doit être un nombre positif' });
+    }
+
+    const slug = name ? name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '') : undefined;
 
     const updates = [];
     const params = [];
@@ -173,18 +190,6 @@ export const updateProduct = async (req, res) => {
       updates.push(`description = $${paramIndex++}`);
       params.push(description);
     }
-    if (brand !== undefined) {
-      updates.push(`brand = $${paramIndex++}`);
-      params.push(brand);
-    }
-    if (material !== undefined) {
-      updates.push(`material = $${paramIndex++}`);
-      params.push(material);
-    }
-    if (careInstructions !== undefined) {
-      updates.push(`careInstructions = $${paramIndex++}`);
-      params.push(careInstructions);
-    }
     if (price !== undefined) {
       updates.push(`price = $${paramIndex++}`);
       params.push(price);
@@ -195,7 +200,7 @@ export const updateProduct = async (req, res) => {
     }
     if (stock !== undefined) {
       updates.push(`stock = $${paramIndex++}`);
-      params.push(stock);
+      params.push(Math.max(0, stock));
     }
     if (featured !== undefined) {
       updates.push(`featured = $${paramIndex++}`);
@@ -207,29 +212,29 @@ export const updateProduct = async (req, res) => {
     }
 
     updates.push(`updatedAt = CURRENT_TIMESTAMP`);
-    params.push(id);
+    params.push(parseInt(id));
 
     if (updates.length === 1) {
-      return res.status(400).json({ error: 'No fields to update' });
+      return res.status(400).json({ error: 'Aucun champ à mettre à jour' });
     }
 
     const query = `UPDATE products SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
     const result = await pool.query(query, params);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
+      return res.status(404).json({ error: 'Produit non trouvé' });
     }
 
     // Mettre à jour les tailles si fournies
     if (sizes && Array.isArray(sizes) && sizes.length > 0) {
       // Supprimer les anciennes tailles
-      await pool.query('DELETE FROM product_sizes WHERE productId = $1', [id]);
+      await pool.query('DELETE FROM product_sizes WHERE productId = $1', [parseInt(id)]);
       
       // Ajouter les nouvelles tailles
       for (const size of sizes) {
         await pool.query(
           'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3)',
-          [id, size, 0]
+          [parseInt(id), size, 0]
         );
       }
     }
@@ -237,13 +242,13 @@ export const updateProduct = async (req, res) => {
     // Mettre à jour les couleurs si fournies
     if (colors && Array.isArray(colors) && colors.length > 0) {
       // Supprimer les anciennes couleurs
-      await pool.query('DELETE FROM product_colors WHERE productId = $1', [id]);
+      await pool.query('DELETE FROM product_colors WHERE productId = $1', [parseInt(id)]);
       
       // Ajouter les nouvelles couleurs
       for (const color of colors) {
         await pool.query(
           'INSERT INTO product_colors (productId, colorName, colorHex, stock) VALUES ($1, $2, $3, $4)',
-          [id, color.name || color, color.hex || '#000000', 0]
+          [parseInt(id), color.name || color, color.hex || '#000000', 0]
         );
       }
     }
@@ -255,12 +260,12 @@ export const updateProduct = async (req, res) => {
              (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
       FROM products p
       WHERE p.id = $1
-    `, [id]);
+    `, [parseInt(id)]);
 
     res.json(completeProduct.rows[0]);
   } catch (err) {
     console.error('Update product error:', err);
-    res.status(500).json({ error: 'Failed to update product' });
+    res.status(500).json({ error: 'Erreur lors de la mise à jour du produit' });
   }
 };
 
@@ -268,16 +273,21 @@ export const updateProduct = async (req, res) => {
 export const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
-    const result = await pool.query('DELETE FROM products WHERE id = $1 RETURNING id', [id]);
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Product not found' });
+    
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ error: 'ID de produit invalide' });
     }
 
-    res.json({ message: 'Product deleted successfully' });
+    const result = await pool.query('DELETE FROM products WHERE id = $1 RETURNING id', [parseInt(id)]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Produit non trouvé' });
+    }
+
+    res.json({ message: 'Produit supprimé avec succès' });
   } catch (err) {
     console.error('Delete product error:', err);
-    res.status(500).json({ error: 'Failed to delete product' });
+    res.status(500).json({ error: 'Erreur lors de la suppression du produit' });
   }
 };
 
@@ -287,15 +297,29 @@ export const addProductImage = async (req, res) => {
     const { productId } = req.params;
     const { imageUrl, isMainImage, isHoverImage, order } = req.body;
 
+    if (!imageUrl) {
+      return res.status(400).json({ error: 'L\'URL de l\'image est obligatoire' });
+    }
+
+    if (!productId || isNaN(productId)) {
+      return res.status(400).json({ error: 'ID de produit invalide' });
+    }
+
+    // Vérifier que le produit existe
+    const productExists = await pool.query('SELECT id FROM products WHERE id = $1', [parseInt(productId)]);
+    if (productExists.rows.length === 0) {
+      return res.status(404).json({ error: 'Produit non trouvé' });
+    }
+
     const result = await pool.query(
       'INSERT INTO product_images (productId, imageUrl, isMainImage, isHoverImage, "order") VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [productId, imageUrl, isMainImage || false, isHoverImage || false, order || 0]
+      [parseInt(productId), imageUrl, isMainImage || false, isHoverImage || false, order || 0]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Add product image error:', err);
-    res.status(500).json({ error: 'Failed to add image' });
+    res.status(500).json({ error: 'Erreur lors de l\'ajout de l\'image' });
   }
 };
 
@@ -305,15 +329,23 @@ export const addProductSize = async (req, res) => {
     const { productId } = req.params;
     const { size, stock } = req.body;
 
+    if (!size) {
+      return res.status(400).json({ error: 'La taille est obligatoire' });
+    }
+
+    if (!productId || isNaN(productId)) {
+      return res.status(400).json({ error: 'ID de produit invalide' });
+    }
+
     const result = await pool.query(
       'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3) ON CONFLICT (productId, size) DO UPDATE SET stock = EXCLUDED.stock RETURNING *',
-      [productId, size, stock || 0]
+      [parseInt(productId), size, Math.max(0, stock || 0)]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Add product size error:', err);
-    res.status(500).json({ error: 'Failed to add size' });
+    res.status(500).json({ error: 'Erreur lors de l\'ajout de la taille' });
   }
 };
 
@@ -323,15 +355,23 @@ export const addProductColor = async (req, res) => {
     const { productId } = req.params;
     const { colorName, colorHex, stock } = req.body;
 
+    if (!colorName) {
+      return res.status(400).json({ error: 'Le nom de la couleur est obligatoire' });
+    }
+
+    if (!productId || isNaN(productId)) {
+      return res.status(400).json({ error: 'ID de produit invalide' });
+    }
+
     const result = await pool.query(
       'INSERT INTO product_colors (productId, colorName, colorHex, stock) VALUES ($1, $2, $3, $4) ON CONFLICT (productId, colorName) DO UPDATE SET stock = EXCLUDED.stock RETURNING *',
-      [productId, colorName, colorHex, stock || 0]
+      [parseInt(productId), colorName, colorHex || '#000000', Math.max(0, stock || 0)]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Add product color error:', err);
-    res.status(500).json({ error: 'Failed to add color' });
+    res.status(500).json({ error: 'Erreur lors de l\'ajout de la couleur' });
   }
 };
 
@@ -341,19 +381,27 @@ export const updateSizeStock = async (req, res) => {
     const { productId, sizeId } = req.params;
     const { stock } = req.body;
 
+    if (stock === undefined || isNaN(stock)) {
+      return res.status(400).json({ error: 'Le stock doit être un nombre' });
+    }
+
+    if (!productId || isNaN(productId) || !sizeId || isNaN(sizeId)) {
+      return res.status(400).json({ error: 'IDs invalides' });
+    }
+
     const result = await pool.query(
       'UPDATE product_sizes SET stock = $1 WHERE id = $2 AND productId = $3 RETURNING *',
-      [stock, sizeId, productId]
+      [Math.max(0, stock), parseInt(sizeId), parseInt(productId)]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Size not found' });
+      return res.status(404).json({ error: 'Taille non trouvée' });
     }
 
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Update size stock error:', err);
-    res.status(500).json({ error: 'Failed to update stock' });
+    res.status(500).json({ error: 'Erreur lors de la mise à jour du stock' });
   }
 };
 
@@ -363,18 +411,26 @@ export const updateColorStock = async (req, res) => {
     const { productId, colorId } = req.params;
     const { stock } = req.body;
 
+    if (stock === undefined || isNaN(stock)) {
+      return res.status(400).json({ error: 'Le stock doit être un nombre' });
+    }
+
+    if (!productId || isNaN(productId) || !colorId || isNaN(colorId)) {
+      return res.status(400).json({ error: 'IDs invalides' });
+    }
+
     const result = await pool.query(
       'UPDATE product_colors SET stock = $1 WHERE id = $2 AND productId = $3 RETURNING *',
-      [stock, colorId, productId]
+      [Math.max(0, stock), parseInt(colorId), parseInt(productId)]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Color not found' });
+      return res.status(404).json({ error: 'Couleur non trouvée' });
     }
 
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Update color stock error:', err);
-    res.status(500).json({ error: 'Failed to update stock' });
+    res.status(500).json({ error: 'Erreur lors de la mise à jour du stock' });
   }
 };
