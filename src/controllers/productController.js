@@ -128,9 +128,11 @@ export const createProduct = async (req, res) => {
     // Ajouter les tailles si fournies
     if (sizes && Array.isArray(sizes) && sizes.length > 0) {
       for (const size of sizes) {
+        // Déterminer le stock par défaut selon la taille
+        const defaultStock = ['XS', 'XXL'].includes(size) ? 10 : 15;
         await pool.query(
           'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3) ON CONFLICT (productId, size) DO NOTHING',
-          [productId, size, 0]
+          [productId, size, defaultStock]
         );
       }
     }
@@ -138,9 +140,12 @@ export const createProduct = async (req, res) => {
     // Ajouter les couleurs si fournies
     if (colors && Array.isArray(colors) && colors.length > 0) {
       for (const color of colors) {
+        // Déterminer le stock par défaut selon la couleur
+        const colorName = color.name || color;
+        const defaultStock = ['noir', 'Noir', 'black', 'Black'].includes(colorName) ? 20 : 15;
         await pool.query(
           'INSERT INTO product_colors (productId, colorName, colorHex, stock) VALUES ($1, $2, $3, $4) ON CONFLICT (productId, colorName) DO NOTHING',
-          [productId, color.name || color, color.hex || '#000000', 0]
+          [productId, colorName, color.hex || '#000000', defaultStock]
         );
       }
     }
@@ -186,13 +191,27 @@ export const updateProduct = async (req, res) => {
 
     let slug = undefined;
     if (name) {
-      slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      // Générer un slug limité à 50 caractères max
+      let baseSlug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+      
+      // Limiter la longueur pour laisser de la place au timestamp
+      if (baseSlug.length > 40) {
+        baseSlug = baseSlug.substring(0, 40);
+      }
+      
+      slug = baseSlug;
       
       // Vérifier si ce slug existe déjà (et qu'il n'appartient pas au produit actuel)
       const existingSlug = await pool.query('SELECT id FROM products WHERE slug = $1 AND id != $2', [slug, parseInt(id)]);
       if (existingSlug.rows.length > 0) {
         // Ajouter un timestamp pour rendre le slug unique
-        slug = slug + '-' + Math.floor(Date.now() / 1000);
+        const timestamp = Math.floor(Date.now() / 1000).toString();
+        // Réduire le slug si nécessaire pour laisser de la place au timestamp
+        const maxBaseLength = 50 - timestamp.length - 1; // -1 pour le tiret
+        if (slug.length > maxBaseLength) {
+          slug = slug.substring(0, maxBaseLength);
+        }
+        slug = slug + '-' + timestamp;
       }
     }
 
