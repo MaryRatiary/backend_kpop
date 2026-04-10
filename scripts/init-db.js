@@ -1,62 +1,79 @@
+import pkg from 'pg';
+import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
-import pool from '../src/config/database.js';
-import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 
 dotenv.config();
 
-const runMigrations = async () => {
+const { Pool } = pkg;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ✅ Configuration du pool
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+});
+
+// ✅ Lire et exécuter les migrations
+async function runMigrations() {
   try {
-    console.log('🚀 Démarrage de l\'initialisation de la base de données...');
-    console.log('📊 DATABASE_URL:', process.env.DATABASE_URL ? '✅ Configurée' : '❌ Non configurée');
+    console.log('🔄 Vérification des migrations...');
 
-    const migrationsDir = path.join(process.cwd(), 'migrations');
-    
-    if (!fs.existsSync(migrationsDir)) {
-      console.error('❌ Le dossier migrations n\'existe pas');
-      process.exit(1);
-    }
+    // Créer la table schema_migrations si elle n'existe pas
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version VARCHAR(255) PRIMARY KEY,
+        executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-    // Lire tous les fichiers de migration
-    const files = fs.readdirSync(migrationsDir)
-      .filter(file => file.endsWith('.sql'))
-      .sort();
+    const migrationsDir = path.join(__dirname, '../migrations');
+    const files = fs.readdirSync(migrationsDir).sort();
 
-    console.log(`📁 Migrations trouvées: ${files.length}`);
-    files.forEach(file => console.log(`  - ${file}`));
-
-    // Exécuter chaque migration
     for (const file of files) {
-      const filePath = path.join(migrationsDir, file);
-      const sql = fs.readFileSync(filePath, 'utf8');
+      if (!file.endsWith('.sql')) continue;
 
-      console.log(`\n▶️  Exécution de: ${file}`);
+      const version = file.replace('.sql', '');
       
+      // Vérifier si la migration a déjà été exécutée
+      const result = await pool.query(
+        'SELECT * FROM schema_migrations WHERE version = $1',
+        [version]
+      );
+
+      if (result.rows.length > 0) {
+        console.log(`✅ Migration ${version} déjà exécutée`);
+        continue;
+      }
+
+      console.log(`⏳ Exécution de la migration ${version}...`);
+
+      const sqlPath = path.join(migrationsDir, file);
+      const sql = fs.readFileSync(sqlPath, 'utf8');
+
       try {
         await pool.query(sql);
-        console.log(`✅ ${file} exécutée avec succès`);
+        await pool.query(
+          'INSERT INTO schema_migrations (version) VALUES ($1)',
+          [version]
+        );
+        console.log(`✅ Migration ${version} exécutée avec succès`);
       } catch (err) {
-        console.error(`⚠️  Erreur lors de l'exécution de ${file}:`, err.message);
-        // Ne pas interrompre, continuer avec les autres migrations
+        console.error(`❌ Erreur lors de l'exécution de ${version}:`, err.message);
+        // Continuer avec la migration suivante au lieu de crasher
       }
     }
 
-    console.log('\n✅ Toutes les migrations ont été traitées!');
-    
-    // Vérifier que l'admin a bien été créé
-    const adminCheck = await pool.query('SELECT id, email, role FROM users WHERE email = $1', ['admin123@gmail.com']);
-    if (adminCheck.rows.length > 0) {
-      console.log('✅ Compte admin créé:', adminCheck.rows[0].email);
-    } else {
-      console.log('⚠️  Compte admin non trouvé');
-    }
-
+    console.log('✅ Toutes les migrations ont été vérifiées');
     await pool.end();
     process.exit(0);
   } catch (err) {
-    console.error('❌ Erreur critique:', err);
+    console.error('❌ Erreur fatale:', err);
+    await pool.end();
     process.exit(1);
   }
-};
+}
 
+// Exécuter les migrations
 runMigrations();

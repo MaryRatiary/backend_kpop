@@ -7,15 +7,15 @@ import {
   getAllOrders
 } from '../controllers/dashboardController.js';
 import { getOrderByIdAdmin } from '../controllers/orderController.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authorizeAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Routes dashboard admin
-router.get('/', authenticateToken, getAdminDashboard);
-router.get('/stats', authenticateToken, getSalesStats);
-router.get('/orders', authenticateToken, getAllOrders);
-router.get('/orders/:orderId', authenticateToken, getOrderByIdAdmin);
-router.put('/orders/:orderId', authenticateToken, updateOrderStatus);
+// Routes dashboard admin - utiliser authorizeAdmin au lieu de authenticateToken
+router.get('/', authorizeAdmin, getAdminDashboard);
+router.get('/stats', authorizeAdmin, getSalesStats);
+router.get('/orders', authorizeAdmin, getAllOrders);
+router.get('/orders/:orderId', authorizeAdmin, getOrderByIdAdmin);
+router.put('/orders/:orderId', authorizeAdmin, updateOrderStatus);
 
 export default router;
