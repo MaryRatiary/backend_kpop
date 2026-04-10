@@ -9,11 +9,34 @@ dotenv.config();
 const { Pool } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Configuration du pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
+// Configuration du pool - avec fallback sur les variables individuelles
+let poolConfig;
+
+if (process.env.DATABASE_URL) {
+  console.log('🔗 Utilisation de DATABASE_URL');
+  poolConfig = {
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  };
+} else {
+  console.log('🔗 Utilisation des variables DB_* individuelles');
+  poolConfig = {
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 5432,
+    database: process.env.DB_NAME,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  };
+}
+
+console.log('📋 Configuration du pool:');
+console.log(`   - Host: ${poolConfig.host || 'N/A'}`);
+console.log(`   - Port: ${poolConfig.port || 'N/A'}`);
+console.log(`   - Database: ${poolConfig.database || 'N/A'}`);
+console.log(`   - User: ${poolConfig.user || 'N/A'}`);
+
+const pool = new Pool(poolConfig);
 
 // Fonction pour attendre la connexion avec retry
 async function waitForDatabase(maxRetries = 30, delayMs = 2000) {

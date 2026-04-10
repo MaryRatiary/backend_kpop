@@ -4,22 +4,31 @@
 ALTER TABLE categories 
   ALTER COLUMN image TYPE TEXT;
 
--- Modifier la colonne image de la table kpop_groups
-ALTER TABLE kpop_groups 
-  ALTER COLUMN image TYPE TEXT;
+-- Modifier la colonne image de la table kpop_groups (si elle existe)
+DO $$ BEGIN
+  ALTER TABLE kpop_groups 
+    ALTER COLUMN image TYPE TEXT;
+EXCEPTION WHEN undefined_table THEN
+  NULL;
+END $$;
 
--- Modifier la colonne imageUrl de la table product_images
-ALTER TABLE product_images 
-  ALTER COLUMN imageUrl TYPE TEXT;
+-- Modifier la colonne imageUrl de la table product_images (si elle existe)
+DO $$ BEGIN
+  ALTER TABLE product_images 
+    ALTER COLUMN imageUrl TYPE TEXT;
+EXCEPTION WHEN undefined_table THEN
+  NULL;
+END $$;
 
--- Ajouter les colonnes manquantes à la table categories si elles n'existent pas
+-- Ajouter la colonne parentId à la table categories si elle n'existe pas
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-    WHERE table_name = 'categories' AND column_name = 'parentId') THEN
+    WHERE table_name = 'categories' AND column_name = 'parentid') THEN
     ALTER TABLE categories ADD COLUMN parentId INTEGER REFERENCES categories(id) ON DELETE CASCADE;
   END IF;
 END $$;
 
+-- Ajouter la colonne level à la table categories si elle n'existe pas
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
     WHERE table_name = 'categories' AND column_name = 'level') THEN
@@ -28,4 +37,4 @@ DO $$ BEGIN
 END $$;
 
 -- Créer l'index pour parentId si nécessaire
-CREATE INDEX IF NOT EXISTS idx_categories_parentId ON categories(parentId);
+CREATE INDEX IF NOT EXISTS idx_categories_parentid ON categories(parentId);
