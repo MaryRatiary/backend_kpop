@@ -9,13 +9,37 @@ dotenv.config();
 const { Pool } = pkg;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// ✅ Configuration du pool
+// Configuration du pool
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-// ✅ Lire et exécuter les migrations
+// Fonction pour attendre la connexion avec retry
+async function waitForDatabase(maxRetries = 30, delayMs = 2000) {
+  let lastError;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`🔄 Tentative de connexion à la base de données (${attempt}/${maxRetries})...`);
+      await pool.query('SELECT NOW()');
+      console.log('✅ Connexion à la base de données établie');
+      return;
+    } catch (err) {
+      lastError = err;
+      console.warn(`⚠️  Tentative ${attempt} échouée: ${err.message}`);
+      
+      if (attempt < maxRetries) {
+        console.log(`⏳ Attente de ${delayMs}ms avant nouvelle tentative...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  
+  throw new Error(`❌ Impossible de se connecter à la base de données après ${maxRetries} tentatives: ${lastError.message}`);
+}
+
+// Lire et exécuter les migrations
 async function runMigrations() {
   try {
     console.log('🔄 Vérification des migrations...');
@@ -75,5 +99,13 @@ async function runMigrations() {
   }
 }
 
-// Exécuter les migrations
-runMigrations();
+// Exécuter les migrations avec attente de la base de données
+(async () => {
+  try {
+    await waitForDatabase();
+    await runMigrations();
+  } catch (err) {
+    console.error('❌ Erreur fatale:', err.message);
+    process.exit(1);
+  }
+})();

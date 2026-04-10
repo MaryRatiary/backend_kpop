@@ -33,20 +33,30 @@ const pool = new Pool(
 // Gestion des erreurs du pool
 pool.on('error', (err) => {
   console.error('❌ Erreur inattendue sur client idle:', err);
-  process.exit(-1);
+  // Ne pas exit ici - laisser l'application gérer les erreurs
 });
 
 pool.on('connect', () => {
   console.log('✅ Connexion établie avec PostgreSQL');
 });
 
-// Test de connexion au démarrage
-try {
-  const testConnection = await pool.query('SELECT NOW()');
-  console.log('✅ Base de données connectée');
-} catch (err) {
-  console.error('❌ Impossible de se connecter à la base de données:', err.message);
-  process.exit(1);
+// Drapeau pour suivre si la connexion a été testée
+let connectionTested = false;
+
+// Fonction pour tester la connexion de manière lazy
+export async function ensureConnection() {
+  if (connectionTested) {
+    return;
+  }
+
+  try {
+    await pool.query('SELECT NOW()');
+    console.log('✅ Base de données connectée');
+    connectionTested = true;
+  } catch (err) {
+    console.error('❌ Impossible de se connecter à la base de données:', err.message);
+    throw err;
+  }
 }
 
 export default pool;
