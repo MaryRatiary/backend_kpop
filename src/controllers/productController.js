@@ -1,4 +1,5 @@
 import pool from '../config/database.js';
+import { formatProductData, formatProductsArray } from '../utils/dataFormatter.js';
 
 // Obtenir tous les produits
 export const getAllProducts = async (req, res) => {
@@ -37,7 +38,8 @@ export const getAllProducts = async (req, res) => {
     params.push(Math.min(parseInt(limit) || 50, 100), parseInt(offset) || 0);
 
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    const formattedProducts = formatProductsArray(result.rows);
+    res.json(formattedProducts);
   } catch (err) {
     console.error('Get products error:', err);
     res.status(500).json({ error: 'Erreur lors de la récupération des produits' });
@@ -72,10 +74,12 @@ export const getProductById = async (req, res) => {
 
     const reviews = await pool.query('SELECT * FROM reviews WHERE productId = $1 ORDER BY createdAt DESC', [id]);
 
-    res.json({
+    const formattedProduct = formatProductData({
       ...product.rows[0],
       reviews: reviews.rows
     });
+
+    res.json(formattedProduct);
   } catch (err) {
     console.error('Get product error:', err);
     res.status(500).json({ error: 'Erreur lors de la récupération du produit' });
@@ -96,7 +100,6 @@ export const createProduct = async (req, res) => {
       colors
     } = req.body;
 
-    // Validation
     if (!name || !price) {
       return res.status(400).json({ error: 'Le nom et le prix sont obligatoires' });
     }
@@ -105,13 +108,10 @@ export const createProduct = async (req, res) => {
       return res.status(400).json({ error: 'Le prix doit être un nombre positif' });
     }
 
-    // Générer un slug unique avec timestamp si nécessaire
     let slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
     
-    // Vérifier si ce slug existe déjà
     const existingSlug = await pool.query('SELECT id FROM products WHERE slug = $1', [slug]);
     if (existingSlug.rows.length > 0) {
-      // Ajouter un timestamp pour rendre le slug unique
       slug = slug + '-' + Math.floor(Date.now() / 1000);
     }
 
@@ -125,10 +125,8 @@ export const createProduct = async (req, res) => {
 
     const productId = result.rows[0].id;
 
-    // Ajouter les tailles si fournies
     if (sizes && Array.isArray(sizes) && sizes.length > 0) {
       for (const size of sizes) {
-        // Déterminer le stock par défaut selon la taille
         const defaultStock = ['XS', 'XXL'].includes(size) ? 10 : 15;
         await pool.query(
           'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3) ON CONFLICT (productId, size) DO NOTHING',
@@ -137,10 +135,8 @@ export const createProduct = async (req, res) => {
       }
     }
 
-    // Ajouter les couleurs si fournies
     if (colors && Array.isArray(colors) && colors.length > 0) {
       for (const color of colors) {
-        // Déterminer le stock par défaut selon la couleur
         const colorName = color.name || color;
         const defaultStock = ['noir', 'Noir', 'black', 'Black'].includes(colorName) ? 20 : 15;
         await pool.query(
@@ -150,7 +146,6 @@ export const createProduct = async (req, res) => {
       }
     }
 
-    // Récupérer le produit complète avec ses relations
     const completeProduct = await pool.query(`
       SELECT p.*, 
              (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
@@ -159,7 +154,8 @@ export const createProduct = async (req, res) => {
       WHERE p.id = $1
     `, [productId]);
 
-    res.status(201).json(completeProduct.rows[0]);
+    const formatted = formatProductData(completeProduct.rows[0]);
+    res.status(201).json(formatted);
   } catch (err) {
     console.error('Create product error:', err);
     res.status(500).json({ error: 'Erreur lors de la création du produit' });
@@ -191,23 +187,18 @@ export const updateProduct = async (req, res) => {
 
     let slug = undefined;
     if (name) {
-      // Générer un slug limité à 50 caractères max
       let baseSlug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       
-      // Limiter la longueur pour laisser de la place au timestamp
       if (baseSlug.length > 40) {
         baseSlug = baseSlug.substring(0, 40);
       }
       
       slug = baseSlug;
       
-      // Vérifier si ce slug existe déjà (et qu'il n'appartient pas au produit actuel)
       const existingSlug = await pool.query('SELECT id FROM products WHERE slug = $1 AND id != $2', [slug, parseInt(id)]);
       if (existingSlug.rows.length > 0) {
-        // Ajouter un timestamp pour rendre le slug unique
         const timestamp = Math.floor(Date.now() / 1000).toString();
-        // Réduire le slug si nécessaire pour laisser de la place au timestamp
-        const maxBaseLength = 50 - timestamp.length - 1; // -1 pour le tiret
+        const maxBaseLength = 50 - timestamp.length - 1;
         if (slug.length > maxBaseLength) {
           slug = slug.substring(0, maxBaseLength);
         }
@@ -262,12 +253,9 @@ export const updateProduct = async (req, res) => {
       return res.status(404).json({ error: 'Produit non trouvé' });
     }
 
-    // Mettre à jour les tailles si fournies
     if (sizes && Array.isArray(sizes) && sizes.length > 0) {
-      // Supprimer les anciennes tailles
       await pool.query('DELETE FROM product_sizes WHERE productId = $1', [parseInt(id)]);
       
-      // Ajouter les nouvelles tailles
       for (const size of sizes) {
         await pool.query(
           'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3)',
@@ -276,12 +264,9 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    // Mettre à jour les couleurs si fournies
     if (colors && Array.isArray(colors) && colors.length > 0) {
-      // Supprimer les anciennes couleurs
       await pool.query('DELETE FROM product_colors WHERE productId = $1', [parseInt(id)]);
       
-      // Ajouter les nouvelles couleurs
       for (const color of colors) {
         await pool.query(
           'INSERT INTO product_colors (productId, colorName, colorHex, stock) VALUES ($1, $2, $3, $4)',
@@ -290,7 +275,6 @@ export const updateProduct = async (req, res) => {
       }
     }
 
-    // Récupérer le produit complète avec ses relations
     const completeProduct = await pool.query(`
       SELECT p.*, 
              (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
@@ -299,7 +283,8 @@ export const updateProduct = async (req, res) => {
       WHERE p.id = $1
     `, [parseInt(id)]);
 
-    res.json(completeProduct.rows[0]);
+    const formatted = formatProductData(completeProduct.rows[0]);
+    res.json(formatted);
   } catch (err) {
     console.error('Update product error:', err);
     res.status(500).json({ error: 'Erreur lors de la mise à jour du produit' });
@@ -342,14 +327,10 @@ export const addProductImage = async (req, res) => {
       return res.status(400).json({ error: 'ID de produit invalide' });
     }
 
-    // Vérifier que le produit existe
     const productExists = await pool.query('SELECT id FROM products WHERE id = $1', [parseInt(productId)]);
     if (productExists.rows.length === 0) {
       return res.status(404).json({ error: 'Produit non trouvé' });
     }
-
-    // PostgreSQL TEXT peut accepter des données très grandes (jusqu'à environ 1GB)
-    // Pas besoin de valider la longueur pour les images Base64
     
     const result = await pool.query(
       'INSERT INTO product_images (productId, imageUrl, isMainImage, isHoverImage, "order") VALUES ($1, $2, $3, $4, $5) RETURNING *',
@@ -360,7 +341,6 @@ export const addProductImage = async (req, res) => {
   } catch (err) {
     console.error('Add product image error:', err);
     
-    // Gérer les erreurs spécifiques
     if (err.code === '22001') {
       return res.status(400).json({ error: 'L\'URL de l\'image est trop longue pour la base de données' });
     }

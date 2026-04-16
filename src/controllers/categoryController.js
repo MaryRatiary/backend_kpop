@@ -1,3 +1,4 @@
+import { formatProductData, formatProductsArray } from '../utils/dataFormatter.js';
 import pool from '../config/database.js';
 
 // Obtenir toutes les catégories avec leurs sous-catégories
