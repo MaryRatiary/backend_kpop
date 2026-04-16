@@ -6,6 +6,7 @@ import pool from './config/database.js';
 // Importer les routes
 import authRoutes from './routes/auth.js';
 import productsRoutes from './routes/products.js';
+import reviewsRoutes from './routes/reviews.js';
 import categoriesRoutes from './routes/categories.js';
 import ordersRoutes from './routes/orders.js';
 import cartRoutes from './routes/cart.js';
@@ -75,6 +76,7 @@ app.get('/api/db-test', async (req, res) => {
 // Routes API
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productsRoutes);
+app.use('/api/reviews', reviewsRoutes);
 app.use('/api/categories', categoriesRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/cart', cartRoutes);
