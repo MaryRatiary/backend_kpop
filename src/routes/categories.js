@@ -12,10 +12,11 @@ import { authenticateToken, authorizeAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Routes publiques
+// Routes publiques - ORDRE IMPORTANT!
 router.get('/', getAllCategories);
-router.get('/:id', getCategoryWithChildren);
+// 🔴 Routes spécifiques AVANT les génériques
 router.get('/:parentId/children', getChildCategories);
+router.get('/:id', getCategoryWithChildren);
 
 // Routes admin
 router.post('/', authenticateToken, authorizeAdmin, createCategory);

@@ -4,6 +4,7 @@ import pool from '../config/database.js';
 // Obtenir toutes les catégories avec leurs sous-catégories
 export const getAllCategories = async (req, res) => {
   try {
+    // Récupérer toutes les catégories (parents et enfants)
     const result = await pool.query(`
       SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
         COUNT(DISTINCT p.id) as productCount,
@@ -16,11 +17,14 @@ export const getAllCategories = async (req, res) => {
     `);
     
     const allCategories = result.rows;
+    
+    // Créer une map de toutes les catégories
     const categoryMap = new Map();
     allCategories.forEach(cat => {
       categoryMap.set(cat.id, { ...cat, children: [] });
     });
     
+    // Construire la hiérarchie
     const roots = [];
     allCategories.forEach(cat => {
       if (cat.parentid) {
@@ -40,6 +44,7 @@ export const getAllCategories = async (req, res) => {
   }
 };
 
+// Obtenir toutes les catégories (plates - parents ET enfants)
 export const getAllCategoriesFlat = async (req, res) => {
   try {
     const result = await pool.query(`
@@ -59,19 +64,16 @@ export const getAllCategoriesFlat = async (req, res) => {
   }
 };
 
+// Obtenir une catégorie avec toutes ses sous-catégories
 export const getCategoryWithChildren = async (req, res) => {
   try {
     const { id } = req.params;
     
-    if (!id || isNaN(parseInt(id))) {
-      return res.status(400).json({ error: 'ID de catégorie invalide' });
-    }
-
     const category = await pool.query(`
       SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt 
       FROM categories c
       WHERE c.id = $1
-    `, [parseInt(id)]);
+    `, [id]);
     
     if (category.rows.length === 0) {
       return res.status(404).json({ error: 'Category not found' });
@@ -87,7 +89,7 @@ export const getCategoryWithChildren = async (req, res) => {
       WHERE c.parentid = $1
       GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
       ORDER BY c."order" ASC, c.name ASC
-    `, [parseInt(id)]);
+    `, [id]);
 
     const products = await pool.query(`
       SELECT p.id, p.name, p.slug, p.price, p.originalPrice, p.stock, p.featured, p.categoryId,
@@ -95,7 +97,7 @@ export const getCategoryWithChildren = async (req, res) => {
       FROM products p
       WHERE p.categoryId = $1
       ORDER BY p.name ASC
-    `, [parseInt(id)]);
+    `, [id]);
 
     res.json({
       ...category.rows[0],
@@ -108,13 +110,10 @@ export const getCategoryWithChildren = async (req, res) => {
   }
 };
 
+// Obtenir les sous-catégories d'une catégorie
 export const getChildCategories = async (req, res) => {
   try {
     const { parentId } = req.params;
-    
-    if (!parentId || isNaN(parseInt(parentId))) {
-      return res.status(400).json({ error: 'ID parent invalide' });
-    }
     
     const result = await pool.query(`
       SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
@@ -126,7 +125,7 @@ export const getChildCategories = async (req, res) => {
       WHERE c.parentid = $1
       GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
       ORDER BY c."order" ASC, c.name ASC
-    `, [parseInt(parentId)]);
+    `, [parentId]);
     
     res.json(result.rows);
   } catch (err) {
@@ -135,22 +134,16 @@ export const getChildCategories = async (req, res) => {
   }
 };
 
+// Créer une catégorie (Admin) - peut être parent ou enfant
 export const createCategory = async (req, res) => {
   try {
     const { name, description, image, parentId } = req.body;
-    
-    if (!name || name.trim() === '') {
-      return res.status(400).json({ error: 'Le nom est obligatoire' });
-    }
-
     const slug = name.toLowerCase().replace(/\s+/g, '-');
 
+    // Déterminer le niveau
     let level = 0;
     if (parentId) {
-      if (isNaN(parseInt(parentId))) {
-        return res.status(400).json({ error: 'ID parent invalide' });
-      }
-      const parent = await pool.query('SELECT level FROM categories WHERE id = $1', [parseInt(parentId)]);
+      const parent = await pool.query('SELECT level FROM categories WHERE id = $1', [parentId]);
       if (parent.rows.length === 0) {
         return res.status(404).json({ error: 'Parent category not found' });
       }
@@ -159,25 +152,21 @@ export const createCategory = async (req, res) => {
 
     const result = await pool.query(
       'INSERT INTO categories (name, description, image, slug, parentId, level) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-      [name, description || null, image || null, slug, parentId ? parseInt(parentId) : null, level]
+      [name, description, image, slug, parentId || null, level]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
     console.error('Create category error:', err);
-    res.status(500).json({ error: 'Erreur lors de la création de la catégorie', details: err.message });
+    res.status(500).json({ error: 'Failed to create category' });
   }
 };
 
+// Mettre à jour une catégorie (Admin)
 export const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
     const { name, description, image } = req.body;
-
-    if (!id || isNaN(parseInt(id))) {
-      return res.status(400).json({ error: 'ID de catégorie invalide' });
-    }
-
     const slug = name ? name.toLowerCase().replace(/\s+/g, '-') : undefined;
 
     const updates = [];
@@ -188,156 +177,169 @@ export const updateCategory = async (req, res) => {
       updates.push(`name = $${paramIndex++}`);
       params.push(name);
     }
-    if (description !== undefined) {
+    if (description) {
       updates.push(`description = $${paramIndex++}`);
-      params.push(description || null);
+      params.push(description);
     }
-    if (image !== undefined) {
+    if (image) {
       updates.push(`image = $${paramIndex++}`);
-      params.push(image || null);
+      params.push(image);
     }
     if (slug) {
       updates.push(`slug = $${paramIndex++}`);
       params.push(slug);
     }
 
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'Aucun champ à mettre à jour' });
-    }
-
     updates.push(`updatedAt = CURRENT_TIMESTAMP`);
-    params.push(parseInt(id));
+    params.push(id);
+
+    if (updates.length === 1) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
 
     const query = `UPDATE categories SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
     const result = await pool.query(query, params);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Catégorie non trouvée' });
+      return res.status(404).json({ error: 'Category not found' });
     }
 
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Update category error:', err);
-    res.status(500).json({ error: 'Erreur lors de la mise à jour', details: err.message });
+    res.status(500).json({ error: 'Failed to update category' });
   }
 };
 
-// ✅ CORRIGÉ: Supprimer une catégorie (Admin) - AVEC TRANSACTIONS
+// Supprimer une catégorie (Admin)
 export const deleteCategory = async (req, res) => {
-  const client = await pool.connect();
   try {
     const { id } = req.params;
     
-    // VALIDATION STRICTE
-    if (!id || isNaN(parseInt(id))) {
-      return res.status(400).json({ error: 'ID de catégorie invalide' });
-    }
-
-    const categoryId = parseInt(id);
-
     // Vérifier si la catégorie existe
-    const categoryCheck = await client.query('SELECT id FROM categories WHERE id = $1', [categoryId]);
+    const categoryCheck = await pool.query('SELECT id FROM categories WHERE id = $1', [id]);
     if (categoryCheck.rows.length === 0) {
-      return res.status(404).json({ error: 'Catégorie non trouvée' });
+      return res.status(404).json({ error: 'Category not found' });
     }
 
-    // DÉBUT TRANSACTION
-    await client.query('BEGIN');
-    console.log(`🗑️ Suppression de la catégorie ${categoryId}`);
+    // Supprimer les order_items qui référencent les produits de cette catégorie
+    await pool.query(`
+      DELETE FROM order_items 
+      WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+    `, [id]);
 
-    // 1️⃣ Récupérer TOUS les IDs de produits (UNIQUEMENT de cette catégorie et ses sous-catégories)
-    const allProductIds = await client.query(`
-      WITH RECURSIVE category_tree AS (
-        SELECT id FROM categories WHERE id = $1
-        UNION ALL
-        SELECT c.id FROM categories c
-        INNER JOIN category_tree ct ON c.parentid = ct.id
-      )
-      SELECT DISTINCT id FROM products WHERE categoryId IN (SELECT id FROM category_tree)
-    `, [categoryId]);
+    // Supprimer les images des produits
+    await pool.query(`
+      DELETE FROM product_images 
+      WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+    `, [id]);
 
-    const productIds = allProductIds.rows.map(r => r.id);
-    console.log(`📊 Produits à supprimer: ${productIds.length}`);
+    // Supprimer les couleurs des produits
+    await pool.query(`
+      DELETE FROM product_colors 
+      WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+    `, [id]);
 
-    // 2️⃣ Supprimer les reviews
-    if (productIds.length > 0) {
-      await client.query('DELETE FROM reviews WHERE productId = ANY($1)', [productIds]);
-      await client.query('DELETE FROM product_images WHERE productId = ANY($1)', [productIds]);
-      await client.query('DELETE FROM product_colors WHERE productId = ANY($1)', [productIds]);
-      await client.query('DELETE FROM product_sizes WHERE productId = ANY($1)', [productIds]);
-      await client.query('DELETE FROM order_items WHERE productId = ANY($1)', [productIds]);
-      await client.query('DELETE FROM products WHERE id = ANY($1)', [productIds]);
+    // Supprimer les tailles des produits
+    await pool.query(`
+      DELETE FROM product_sizes 
+      WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+    `, [id]);
+
+    // Supprimer les produits de la catégorie
+    await pool.query('DELETE FROM products WHERE categoryId = $1', [id]);
+
+    // Supprimer les sous-catégories et leurs produits
+    const subcategories = await pool.query('SELECT id FROM categories WHERE parentId = $1', [id]);
+    
+    for (const subcat of subcategories.rows) {
+      // Supprimer les order_items des sous-catégories
+      await pool.query(`
+        DELETE FROM order_items 
+        WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+      `, [subcat.id]);
+
+      await pool.query(`
+        DELETE FROM product_images 
+        WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+      `, [subcat.id]);
+
+      await pool.query(`
+        DELETE FROM product_colors 
+        WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+      `, [subcat.id]);
+
+      await pool.query(`
+        DELETE FROM product_sizes 
+        WHERE productId IN (SELECT id FROM products WHERE categoryId = $1)
+      `, [subcat.id]);
+
+      await pool.query('DELETE FROM products WHERE categoryId = $1', [subcat.id]);
     }
 
-    // 3️⃣ Supprimer les sous-catégories (UNIQUEMENT celles de cette catégorie)
-    await client.query(`
-      WITH RECURSIVE category_tree AS (
-        SELECT id FROM categories WHERE parentid = $1
-        UNION ALL
-        SELECT c.id FROM categories c
-        INNER JOIN category_tree ct ON c.parentid = ct.id
-      )
-      DELETE FROM categories WHERE id IN (SELECT id FROM category_tree)
-    `, [categoryId]);
+    // Supprimer les sous-catégories
+    await pool.query('DELETE FROM categories WHERE parentId = $1', [id]);
 
-    // 4️⃣ Supprimer la catégorie principale
-    await client.query('DELETE FROM categories WHERE id = $1', [categoryId]);
+    // Supprimer la catégorie principale
+    await pool.query('DELETE FROM categories WHERE id = $1', [id]);
 
-    // COMMIT TRANSACTION
-    await client.query('COMMIT');
-
-    console.log(`✅ Catégorie ${categoryId} supprimée`);
-    res.json({ message: 'Catégorie supprimée avec succès', deletedProducts: productIds.length });
+    res.json({ message: 'Category deleted successfully' });
   } catch (err) {
-    try {
-      await client.query('ROLLBACK');
-    } catch (e) {
-      console.error('Rollback error:', e);
-    }
     console.error('Delete category error:', err);
-    res.status(500).json({ error: 'Erreur lors de la suppression', details: err.message });
-  } finally {
-    client.release();
+    res.status(500).json({ error: 'Failed to delete category' });
   }
 };
 
+// Réorganiser une catégorie (Admin) - Drag and drop
 export const reorderCategory = async (req, res) => {
   try {
     const { id } = req.params;
     const { targetCategoryId } = req.body;
 
-    if (!id || isNaN(parseInt(id)) || !targetCategoryId || isNaN(parseInt(targetCategoryId))) {
-      return res.status(400).json({ error: 'IDs invalides' });
-    }
+    console.log(`🔄 Reorder request: source=${id}, target=${targetCategoryId}`);
 
-    console.log(`🔄 Reorder: source=${id}, target=${targetCategoryId}`);
-
-    const sourceCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [parseInt(id)]);
-    const targetCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [parseInt(targetCategoryId)]);
+    // Récupérer les deux catégories
+    const sourceCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [id]);
+    const targetCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [targetCategoryId]);
 
     if (sourceCategory.rows.length === 0 || targetCategory.rows.length === 0) {
-      return res.status(404).json({ error: 'Catégorie non trouvée' });
+      console.log('❌ One of the categories not found');
+      return res.status(404).json({ error: 'Category not found' });
     }
 
     const source = sourceCategory.rows[0];
     const target = targetCategory.rows[0];
 
+    console.log(`Source: id=${source.id}, parentId=${source.parentid}, order=${source.order}`);
+    console.log(`Target: id=${target.id}, parentId=${target.parentid}, order=${target.order}`);
+
+    // Les deux catégories doivent être au même niveau (même parentId)
     if (source.parentid !== target.parentid) {
-      return res.status(400).json({ error: 'Les catégories doivent être au même niveau' });
+      console.log(`❌ Different levels: source.parentid=${source.parentid}, target.parentid=${target.parentid}`);
+      return res.status(400).json({ error: 'Categories must be at the same level to reorder' });
     }
 
+    // Récupérer toutes les catégories au même niveau, triées par "order"
     const siblingCategories = await pool.query(
       'SELECT id, "order" FROM categories WHERE parentId IS NOT DISTINCT FROM $1 ORDER BY "order" ASC, id ASC',
       [source.parentid]
     );
 
     const siblings = siblingCategories.rows;
+    console.log(`📋 Siblings at level: ${siblings.map(s => `id=${s.id},order=${s.order}`).join(', ')}`);
+
     const sourceIndex = siblings.findIndex(s => s.id === source.id);
     const targetIndex = siblings.findIndex(s => s.id === target.id);
 
+    console.log(`📍 sourceIndex=${sourceIndex}, targetIndex=${targetIndex}`);
+
+    // Créer un nouvel tableau ordonné en déplaçant l'élément source
     let newOrder = siblings.map(s => s.id);
+    
     if (sourceIndex !== targetIndex) {
+      // Retirer l'élément source
       newOrder.splice(sourceIndex, 1);
+      // L'insérer à la position cible
       if (sourceIndex < targetIndex) {
         newOrder.splice(targetIndex - 1, 0, source.id);
       } else {
@@ -345,14 +347,23 @@ export const reorderCategory = async (req, res) => {
       }
     }
 
+    console.log(`📊 New order: ${newOrder.join(', ')}`);
+
+    // Mettre à jour les positions avec des valeurs séquentielles
     for (let i = 0; i < newOrder.length; i++) {
-      await pool.query('UPDATE categories SET "order" = $1 WHERE id = $2', [i + 1, newOrder[i]]);
+      const newOrderValue = i + 1; // Commencer à 1
+      console.log(`  Setting id=${newOrder[i]} to order=${newOrderValue}`);
+      await pool.query('UPDATE categories SET "order" = $1 WHERE id = $2', [newOrderValue, newOrder[i]]);
     }
 
-    const updatedCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [parseInt(id)]);
+    console.log(`✅ Reorder completed successfully`);
+
+    // Récupérer la catégorie mise à jour
+    const updatedCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [id]);
+
     res.json(updatedCategory.rows[0]);
   } catch (err) {
-    console.error('Reorder category error:', err);
-    res.status(500).json({ error: 'Erreur lors du réordonnancement', details: err.message });
+    console.error('❌ Reorder category error:', err);
+    res.status(500).json({ error: 'Failed to reorder category', details: err.message });
   }
 };

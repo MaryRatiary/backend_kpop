@@ -172,8 +172,9 @@ export const markAsNotHelpful = async (req, res) => {
   }
 };
 
-// Supprimer un avis (admin ou auteur)
+// ✅ CORRIGÉ: Supprimer un avis (admin ou auteur) - AVEC TRANSACTIONS
 export const deleteReview = async (req, res) => {
+  const client = await pool.connect();
   try {
     const { reviewId } = req.params;
 
@@ -181,15 +182,38 @@ export const deleteReview = async (req, res) => {
       return res.status(400).json({ error: 'ID avis invalide' });
     }
 
-    const result = await pool.query('DELETE FROM reviews WHERE id = $1 RETURNING id', [parseInt(reviewId)]);
+    const reviewIdInt = parseInt(reviewId);
 
-    if (result.rows.length === 0) {
+    // Vérifier que l'avis existe
+    const reviewCheck = await client.query('SELECT id FROM reviews WHERE id = $1', [reviewIdInt]);
+    if (reviewCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Avis non trouvé' });
     }
 
+    // DÉBUT TRANSACTION
+    await client.query('BEGIN');
+    console.log(`🗑️ Suppression de l'avis ${reviewIdInt}`);
+
+    // 1️⃣ Supprimer les images de l'avis
+    await client.query('DELETE FROM review_images WHERE reviewid = $1', [reviewIdInt]);
+
+    // 2️⃣ Supprimer l'avis
+    await client.query('DELETE FROM reviews WHERE id = $1', [reviewIdInt]);
+
+    // COMMIT TRANSACTION
+    await client.query('COMMIT');
+
+    console.log(`✅ Avis ${reviewIdInt} supprimé`);
     res.json({ message: 'Avis supprimé avec succès' });
   } catch (err) {
+    try {
+      await client.query('ROLLBACK');
+    } catch (e) {
+      console.error('Rollback error:', e);
+    }
     console.error('Delete review error:', err);
-    res.status(500).json({ error: 'Erreur lors de la suppression' });
+    res.status(500).json({ error: 'Erreur lors de la suppression', details: err.message });
+  } finally {
+    client.release();
   }
 };
