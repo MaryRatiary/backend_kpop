@@ -143,7 +143,7 @@ CREATE TABLE reviews (
   updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table des commandes
+-- Table des commandes (AVEC TOUTES LES COLONNES NÉCESSAIRES)
 CREATE TABLE orders (
   id SERIAL PRIMARY KEY,
   userId INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -153,6 +153,16 @@ CREATE TABLE orders (
   paymentStatus VARCHAR(50) DEFAULT 'unpaid',
   status VARCHAR(50) DEFAULT 'pending',
   trackingNumber VARCHAR(100),
+  firstName VARCHAR(100),
+  lastName VARCHAR(100),
+  email VARCHAR(255),
+  phone VARCHAR(20),
+  city VARCHAR(100),
+  postalCode VARCHAR(10),
+  country VARCHAR(100),
+  latitude DECIMAL(10, 8),
+  longitude DECIMAL(11, 8),
+  notes TEXT,
   createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -182,6 +192,8 @@ CREATE INDEX idx_products_groupId ON products(groupId);
 CREATE INDEX idx_product_sizes_productId ON product_sizes(productId);
 CREATE INDEX idx_product_colors_productId ON product_colors(productId);
 CREATE INDEX idx_orders_userId ON orders(userId);
+CREATE INDEX idx_orders_email ON orders(email);
+CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_order_items_orderId ON order_items(orderId);
 CREATE INDEX idx_reviews_productId ON reviews(productId);
 
@@ -190,4 +202,3 @@ CREATE INDEX idx_reviews_productId ON reviews(productId);
 -- ============================================================
 -- Base de données réinitialisée avec succès !
 -- Toutes les tables sont vierges et prêtes pour les nouvelles données.
-
