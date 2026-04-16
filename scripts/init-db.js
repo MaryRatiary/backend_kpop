@@ -62,17 +62,46 @@ async function waitForDatabase(maxRetries = 30, delayMs = 2000) {
   throw new Error(`❌ Impossible de se connecter à la base de données après ${maxRetries} tentatives: ${lastError.message}`);
 }
 
-// Créer la table schema_migrations
+// Créer la table schema_migrations avec la structure correcte
 async function createMigrationsTable() {
   try {
     console.log('📦 Création de la table schema_migrations...');
+    
+    // D'abord, vérifier si la table existe
+    const checkTable = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'schema_migrations'
+      );
+    `);
+
+    if (checkTable.rows[0].exists) {
+      console.log('ℹ️  Table schema_migrations existe déjà');
+      
+      // Vérifier la structure de la table
+      const columnsResult = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name = 'schema_migrations'
+      `);
+      
+      const columns = columnsResult.rows.map(r => r.column_name);
+      console.log(`   Colonnes actuelles: ${columns.join(', ')}`);
+      
+      // Si la table a 'version', on la garde (ancienne structure)
+      // Si elle a 'migration', on la garde (nouvelle structure)
+      // On les accepte toutes les deux
+      return;
+    }
+
+    // Créer la table avec la bonne structure
     await pool.query(`
       CREATE TABLE IF NOT EXISTS schema_migrations (
-        version VARCHAR(255) PRIMARY KEY,
+        id SERIAL PRIMARY KEY,
+        migration VARCHAR(255) UNIQUE NOT NULL,
         executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    console.log('✅ Table schema_migrations prête');
+    console.log('✅ Table schema_migrations créée avec la bonne structure');
   } catch (err) {
     console.error('❌ Erreur lors de la création de schema_migrations:', err.message);
     throw err;
@@ -114,35 +143,70 @@ async function runMigrations() {
         continue;
       }
 
-      const version = file.replace('.sql', '');
+      const migrationName = file.replace('.sql', '');
       
       // Vérifier si la migration a déjà été exécutée
-      const result = await pool.query(
-        'SELECT * FROM schema_migrations WHERE version = $1',
-        [version]
-      );
+      // Compatible avec both 'version' et 'migration' columns
+      let result;
+      try {
+        // Essayer avec la colonne 'migration' d'abord (nouvelle structure)
+        result = await pool.query(
+          'SELECT * FROM schema_migrations WHERE migration = $1',
+          [migrationName]
+        );
+      } catch (err) {
+        if (err.code === '42703') {
+          // Colonne 'migration' n'existe pas, essayer avec 'version'
+          try {
+            result = await pool.query(
+              'SELECT * FROM schema_migrations WHERE version = $1',
+              [migrationName]
+            );
+          } catch (err2) {
+            // Ni 'migration' ni 'version' n'existe, c'est la première migration
+            result = { rows: [] };
+          }
+        } else {
+          throw err;
+        }
+      }
 
       if (result.rows.length > 0) {
-        console.log(`✅ Migration ${version} déjà exécutée`);
+        console.log(`✅ Migration ${migrationName} déjà exécutée`);
         skippedCount++;
         continue;
       }
 
-      console.log(`⏳ Exécution de la migration ${version}...`);
+      console.log(`⏳ Exécution de la migration ${migrationName}...`);
 
       const sqlPath = path.join(migrationsDir, file);
       const sql = fs.readFileSync(sqlPath, 'utf8');
 
       try {
         await pool.query(sql);
-        await pool.query(
-          'INSERT INTO schema_migrations (version) VALUES ($1)',
-          [version]
-        );
-        console.log(`✅ Migration ${version} exécutée avec succès`);
+        
+        // Enregistrer la migration - compatible avec les deux structures
+        try {
+          await pool.query(
+            'INSERT INTO schema_migrations (migration) VALUES ($1)',
+            [migrationName]
+          );
+        } catch (err) {
+          if (err.code === '42703') {
+            // Colonne 'migration' n'existe pas, utiliser 'version'
+            await pool.query(
+              'INSERT INTO schema_migrations (version) VALUES ($1)',
+              [migrationName]
+            );
+          } else {
+            throw err;
+          }
+        }
+        
+        console.log(`✅ Migration ${migrationName} exécutée avec succès`);
         executedCount++;
       } catch (err) {
-        console.error(`❌ Erreur lors de l'exécution de ${version}:`, err.message);
+        console.error(`❌ Erreur lors de l'exécution de ${migrationName}:`, err.message);
         console.error(`   Détails: ${err.detail || 'N/A'}`);
         errorCount++;
         // Continuer avec la migration suivante au lieu de crasher
@@ -150,33 +214,38 @@ async function runMigrations() {
     }
 
     console.log('\n📊 Résumé des migrations:');
-    console.log(`   - Exécutées: ${executedCount}`);
-    console.log(`   - Déjà présentes: ${skippedCount}`);
-    console.log(`   - Erreurs: ${errorCount}`);
-
-    if (errorCount === 0) {
-      console.log('✅ Toutes les migrations ont été traitées avec succès');
-    } else {
-      console.warn(`⚠️  ${errorCount} migration(s) avec erreur(s) - mais le script continue`);
+    console.log(`   ✅ ${executedCount} nouvelles migrations exécutées`);
+    console.log(`   ⏭️  ${skippedCount} migrations déjà exécutées`);
+    if (errorCount > 0) {
+      console.log(`   ❌ ${errorCount} erreurs`);
     }
 
-    await pool.end();
-    process.exit(0);
+    if (errorCount > 0) {
+      console.warn('\n⚠️  Des migrations ont échoué, mais le serveur continue...');
+    }
   } catch (err) {
     console.error('❌ Erreur fatale:', err);
-    await pool.end();
-    process.exit(1);
+    throw err;
   }
 }
 
-// Exécuter les migrations avec attente de la base de données
-(async () => {
+// Fonction principale
+async function main() {
   try {
+    console.log('\n🚀 Initialisation de la base de données...\n');
+    
     await waitForDatabase();
     await runMigrations();
+    
+    console.log('\n✅ Initialisation complète!\n');
+    process.exit(0);
   } catch (err) {
-    console.error('❌ Erreur fatale:', err.message);
-    await pool.end();
+    console.error('\n❌ Erreur lors de l\'initialisation:', err.message);
     process.exit(1);
+  } finally {
+    await pool.end();
   }
-})();
+}
+
+// Exécuter
+main();
