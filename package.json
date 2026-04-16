@@ -7,6 +7,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "init-db": "node scripts/init-db.js",
+    "migrate": "node scripts/run-migrations.js",
+    "create-admin": "node create-admin.js",
     "build": "node scripts/init-db.js",
     "test": "echo \"Error: no test specified\" && exit 1",
     "test:shopify": "node scripts/test-shopify.js",
