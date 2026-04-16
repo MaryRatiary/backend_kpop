@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "start": "node src/server-with-migrations.js",
+    "start:old": "node src/server.js",
+    "dev": "nodemon src/server-with-migrations.js",
+    "dev:old": "nodemon src/server.js"
+  }
+}
