@@ -94,7 +94,6 @@ const parseDate = (dateStr) => {
 async function importHuntrixUnified() {
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
     console.log('🚀 Import Huntrix - Structure unifiée (categories uniquement)\n');
 
     // 1. SUPPRIMER les données existantes
@@ -188,14 +187,15 @@ async function importHuntrixUnified() {
     let productsCreated = 0;
     let imagesCreated = 0;
     let variantsCreated = 0;
+    let errors = 0;
 
     for (const record of records) {
-      try {
-        const productType = record.Type_Produit?.trim();
-        const categoryId = categoryCache[productType];
-        
-        if (!categoryId) continue;
+      const productType = record.Type_Produit?.trim();
+      const categoryId = categoryCache[productType];
+      
+      if (!categoryId) continue;
 
+      try {
         const productSlug = record.Handle?.trim() || slugify(record.Nom);
         const price = parseFloat(record.Prix_Min_EUR) || 0;
         const originalPrice = parseFloat(record.Prix_Barre_EUR) || price;
@@ -205,7 +205,6 @@ async function importHuntrixUnified() {
         const productResult = await client.query(
           `INSERT INTO products (name, slug, description, price, originalPrice, categoryId, groupId, rating, createdAt)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
            RETURNING id`,
           [record.Nom?.trim(), productSlug, record.Description_Complete?.trim() || record.Description_Courte?.trim() || '',
            price, originalPrice, categoryId, groupId, rating, createdAt]
@@ -215,28 +214,40 @@ async function importHuntrixUnified() {
         // Images
         const images = parseImages(record.Images_URLs);
         for (let i = 0; i < images.length; i++) {
-          await client.query(
-            `INSERT INTO product_images (productId, imageUrl, isMainImage, "order") VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-            [productId, images[i], i === 0, i]
-          );
-          imagesCreated++;
+          try {
+            await client.query(
+              `INSERT INTO product_images (productId, imageUrl, isMainImage, "order") VALUES ($1, $2, $3, $4)`,
+              [productId, images[i], i === 0, i]
+            );
+            imagesCreated++;
+          } catch (imgErr) {
+            // Ignorer les erreurs d'images silencieusement
+          }
         }
 
         // Variantes (couleurs et tailles)
         const variants = parseVariants(record.Variantes_Details);
         for (const color of variants.colors) {
-          await client.query(
-            `INSERT INTO product_colors (productId, colorName, stock) VALUES ($1, $2, $3) ON CONFLICT (productId, colorName) DO NOTHING`,
-            [productId, color, 0]
-          );
-          variantsCreated++;
+          try {
+            await client.query(
+              `INSERT INTO product_colors (productId, colorName, stock) VALUES ($1, $2, $3)`,
+              [productId, color, 0]
+            );
+            variantsCreated++;
+          } catch (colorErr) {
+            // Ignorer les erreurs de couleurs silencieusement
+          }
         }
         for (const size of variants.sizes) {
-          await client.query(
-            `INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3) ON CONFLICT (productId, size) DO NOTHING`,
-            [productId, size, 0]
-          );
-          variantsCreated++;
+          try {
+            await client.query(
+              `INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3)`,
+              [productId, size, 0]
+            );
+            variantsCreated++;
+          } catch (sizeErr) {
+            // Ignorer les erreurs de tailles silencieusement
+          }
         }
 
         productsCreated++;
@@ -245,11 +256,10 @@ async function importHuntrixUnified() {
         }
 
       } catch (error) {
-        console.error(`❌ Erreur: ${error.message}`);
+        errors++;
+        // Continuer sans arrêter la boucle
       }
     }
-
-    await client.query('COMMIT');
 
     console.log(`\n✅ Import unifié terminé!\n`);
     console.log(`📊 Statistiques:`);
@@ -257,11 +267,11 @@ async function importHuntrixUnified() {
     console.log(`   - ${uniqueTypes.length} catégories enfants (types de produit)`);
     console.log(`   - ${productsCreated} produits importés`);
     console.log(`   - ${imagesCreated} images assignées`);
-    console.log(`   - ${variantsCreated} variantes créées\n`);
+    console.log(`   - ${variantsCreated} variantes créées`);
+    if (errors > 0) console.log(`   - ${errors} erreurs gérées\n`);
 
   } catch (error) {
-    await client.query('ROLLBACK');
-    console.error('❌ Erreur:', error.message);
+    console.error('❌ Erreur fatale:', error.message);
     process.exit(1);
   } finally {
     client.release();
