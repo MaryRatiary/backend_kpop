@@ -14,32 +14,64 @@ async function runMigrations() {
   try {
     console.log('🔄 Vérification des migrations...');
 
-    // Vérifier si la table schema_migrations existe, sinon la créer
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS schema_migrations (
-        id SERIAL PRIMARY KEY,
-        migration VARCHAR(255) UNIQUE NOT NULL,
-        executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    // ✅ CORRECTION: Vérifier et créer la table schema_migrations si elle n'existe pas
+    // Avec gestion robuste des erreurs
+    const tableExistsResult = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'schema_migrations'
       );
     `);
 
+    if (!tableExistsResult.rows[0].exists) {
+      console.log('📝 Création de la table schema_migrations...');
+      await pool.query(`
+        CREATE TABLE schema_migrations (
+          id SERIAL PRIMARY KEY,
+          migration VARCHAR(255) UNIQUE NOT NULL,
+          executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      console.log('✅ Table schema_migrations créée');
+    } else {
+      console.log('✅ Table schema_migrations existe déjà');
+    }
+
     // Lire tous les fichiers de migration
     const migrationsDir = path.join(__dirname, '../../migrations');
+    
+    if (!fs.existsSync(migrationsDir)) {
+      console.log('⚠️  Dossier migrations non trouvé, création...');
+      fs.mkdirSync(migrationsDir, { recursive: true });
+      return true;
+    }
+
     const migrationFiles = fs.readdirSync(migrationsDir)
       .filter(file => file.endsWith('.sql'))
       .sort();
 
     console.log(`📋 Fichiers de migration trouvés: ${migrationFiles.length}`);
 
-    // Récupérer les migrations déjà exécutées
-    const executedResult = await pool.query(
-      'SELECT migration FROM schema_migrations'
-    );
-    const executedMigrations = new Set(
-      executedResult.rows.map(row => row.migration)
-    );
+    if (migrationFiles.length === 0) {
+      console.log('✅ Aucune migration à exécuter');
+      return true;
+    }
 
-    console.log(`✅ Migrations déjà exécutées: ${executedMigrations.size}`);
+    // Récupérer les migrations déjà exécutées
+    let executedMigrations = new Set();
+    try {
+      const executedResult = await pool.query(
+        'SELECT migration FROM schema_migrations'
+      );
+      executedMigrations = new Set(
+        executedResult.rows.map(row => row.migration)
+      );
+      console.log(`✅ Migrations déjà exécutées: ${executedMigrations.size}`);
+    } catch (error) {
+      console.warn('⚠️  Impossible de lire les migrations exécutées:', error.message);
+      executedMigrations = new Set();
+    }
 
     // Exécuter les migrations manquantes
     let executedCount = 0;
