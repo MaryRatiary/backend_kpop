@@ -284,7 +284,6 @@ export const updateProduct = async (req, res) => {
 
     const completeProduct = await pool.query(`
       SELECT p.*, 
-             c.name as categoryName,
              (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
              (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
       FROM products p
