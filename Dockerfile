@@ -17,6 +17,7 @@ RUN npm ci --only=production && \
 COPY src ./src
 COPY migrations ./migrations
 COPY scripts ./scripts
+COPY produits_huntrix.csv ./
 
 # Port d'exposition
 EXPOSE 5000
