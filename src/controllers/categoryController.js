@@ -424,3 +424,70 @@ export const reorderCategory = async (req, res) => {
     res.status(500).json({ error: 'Erreur lors du réordonnancement', details: err.message });
   }
 };
+// Obtenir une catégorie par slug avec tous ses enfants et produits
+export const getCategoryBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    
+    if (!slug || slug.trim() === '') {
+      return res.status(400).json({ error: 'Slug invalide' });
+    }
+
+    // Récupérer la catégorie par slug
+    const category = await pool.query(`
+      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt 
+      FROM categories c
+      WHERE c.slug = $1
+    `, [slug]);
+    
+    if (category.rows.length === 0) {
+      return res.status(404).json({ error: 'Catégorie non trouvée' });
+    }
+
+    const categoryId = category.rows[0].id;
+
+    // Récupérer les enfants directs
+    const children = await pool.query(`
+      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+        COUNT(DISTINCT p.id)::integer as productCount,
+        COUNT(DISTINCT gc.id)::integer as childCategoryCount
+      FROM categories c
+      LEFT JOIN products p ON c.id = p.categoryId
+      LEFT JOIN categories gc ON c.id = gc.parentid
+      WHERE c.parentid = $1
+      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      ORDER BY c."order" ASC, c.name ASC
+    `, [categoryId]);
+
+    // Récupérer les produits directs et indirects (via enfants)
+    const products = await pool.query(`
+      WITH RECURSIVE category_tree AS (
+        SELECT id FROM categories WHERE id = $1
+        UNION ALL
+        SELECT c.id FROM categories c
+        INNER JOIN category_tree ct ON c.parentid = ct.id
+      )
+      SELECT p.id, p.name, p.slug, p.price, p.originalPrice, p.stock, p.featured, p.categoryId,
+        (SELECT imageUrl FROM product_images WHERE productId = p.id AND isMainImage = true LIMIT 1) as image
+      FROM products p
+      WHERE p.categoryId IN (SELECT id FROM category_tree)
+      ORDER BY p.name ASC
+    `, [categoryId]);
+
+    const totalCount = products.rows.length;
+    const directCount = products.rows.filter(p => p.categoryId === categoryId).length;
+    const indirectCount = totalCount - directCount;
+
+    res.json({
+      ...category.rows[0],
+      children: children.rows,
+      products: products.rows,
+      productCount: totalCount,
+      directProductCount: directCount,
+      indirectProductCount: indirectCount
+    });
+  } catch (err) {
+    console.error('Get category by slug error:', err);
+    res.status(500).json({ error: 'Failed to get category', details: err.message });
+  }
+};

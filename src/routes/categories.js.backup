@@ -5,7 +5,6 @@ import {
   getCategoryWithChildren,
   getChildCategories,
   getSubcategoriesByCategory,
-  getCategoryBySlug,
   createCategory, 
   updateCategory, 
   deleteCategory,

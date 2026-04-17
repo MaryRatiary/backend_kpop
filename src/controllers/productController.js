@@ -495,3 +495,42 @@ export const updateColorStock = async (req, res) => {
     res.status(500).json({ error: 'Erreur lors de la mise à jour du stock' });
   }
 };
+// Obtenir un produit par slug avec tous les détails
+export const getProductBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    
+    if (!slug || slug.trim() === '') {
+      return res.status(400).json({ error: 'Slug de produit invalide' });
+    }
+
+    const product = await pool.query(`
+      SELECT p.*, 
+             c.name as categoryName, 
+             g.name as groupName,
+             (SELECT json_agg(imageUrl ORDER BY "order" ASC) FROM product_images WHERE productId = p.id) as images,
+             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
+             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
+      FROM products p
+      LEFT JOIN categories c ON p.categoryId = c.id
+      LEFT JOIN kpop_groups g ON p.groupId = g.id
+      WHERE p.slug = $1
+    `, [slug]);
+
+    if (product.rows.length === 0) {
+      return res.status(404).json({ error: 'Produit non trouvé' });
+    }
+
+    const reviews = await pool.query('SELECT * FROM reviews WHERE productId = $1 ORDER BY createdAt DESC', [product.rows[0].id]);
+
+    const formattedProduct = formatProductData({
+      ...product.rows[0],
+      reviews: reviews.rows
+    });
+
+    res.json(formattedProduct);
+  } catch (err) {
+    console.error('Get product by slug error:', err);
+    res.status(500).json({ error: 'Erreur lors de la récupération du produit' });
+  }
+};
