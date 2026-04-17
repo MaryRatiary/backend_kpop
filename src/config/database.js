@@ -44,8 +44,8 @@ if (isProduction) {
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false },
     max: 20,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    idleTimeoutMillis: 60000, // 60 secondes
+    connectionTimeoutMillis: 10000, // 10 secondes
   };
 } else {
   console.log('🔗 Utilisation des variables DB_* locales');
@@ -57,8 +57,8 @@ if (isProduction) {
     database: process.env.DB_NAME,
     ssl: false,
     max: 10,
-    idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 2000,
+    idleTimeoutMillis: 60000, // 60 secondes
+    connectionTimeoutMillis: 10000, // 10 secondes
   };
 }
 

@@ -4,7 +4,7 @@ import { formatProductData, formatProductsArray } from '../utils/dataFormatter.j
 // Obtenir tous les produits
 export const getAllProducts = async (req, res) => {
   try {
-    const { categoryId, groupId, featured, limit = 50, offset = 0 } = req.query;
+    const { categoryId, groupId, featured, limit = 50000, offset = 0 } = req.query;
     let query = `
       SELECT 
         p.*,
@@ -34,8 +34,10 @@ export const getAllProducts = async (req, res) => {
       query += ' AND p.featured = true';
     }
 
+    // ✅ CORRIGÉ: Math.min supprimé — la limite est maintenant respectée telle quelle
+    // Avant : Math.min(parseInt(limit) || 50, 100) → bloquait à 100 produits max
     query += ' ORDER BY p.createdAt DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
-    params.push(Math.min(parseInt(limit) || 50, 100), parseInt(offset) || 0);
+    params.push(parseInt(limit) || 50000, parseInt(offset) || 0);
 
     const result = await pool.query(query, params);
     const formattedProducts = formatProductsArray(result.rows);
@@ -291,7 +293,7 @@ export const updateProduct = async (req, res) => {
   }
 };
 
-// ✅ CORRIGÉ: Supprimer un produit (Admin) - AVEC TRANSACTIONS
+// Supprimer un produit (Admin) - AVEC TRANSACTIONS
 export const deleteProduct = async (req, res) => {
   const client = await pool.connect();
   try {
@@ -303,35 +305,21 @@ export const deleteProduct = async (req, res) => {
 
     const productId = parseInt(id);
 
-    // Vérifier que le produit existe
     const productCheck = await client.query('SELECT id FROM products WHERE id = $1', [productId]);
     if (productCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Produit non trouvé' });
     }
 
-    // DÉBUT TRANSACTION
     await client.query('BEGIN');
     console.log(`🗑️ Suppression du produit ${productId}`);
 
-    // 1️⃣ Supprimer les reviews
     await client.query('DELETE FROM reviews WHERE productId = $1', [productId]);
-
-    // 2️⃣ Supprimer les images
     await client.query('DELETE FROM product_images WHERE productId = $1', [productId]);
-
-    // 3️⃣ Supprimer les tailles
     await client.query('DELETE FROM product_sizes WHERE productId = $1', [productId]);
-
-    // 4️⃣ Supprimer les couleurs
     await client.query('DELETE FROM product_colors WHERE productId = $1', [productId]);
-
-    // 5️⃣ Supprimer les items de commande
     await client.query('DELETE FROM order_items WHERE productId = $1', [productId]);
-
-    // 6️⃣ Supprimer le produit
     await client.query('DELETE FROM products WHERE id = $1', [productId]);
 
-    // COMMIT TRANSACTION
     await client.query('COMMIT');
 
     console.log(`✅ Produit ${productId} supprimé`);
@@ -441,7 +429,7 @@ export const addProductColor = async (req, res) => {
   }
 };
 
-// Mettre à jour le stock d'une taille (temps réel)
+// Mettre à jour le stock d'une taille
 export const updateSizeStock = async (req, res) => {
   try {
     const { productId, sizeId } = req.params;
@@ -471,7 +459,7 @@ export const updateSizeStock = async (req, res) => {
   }
 };
 
-// Mettre à jour le stock d'une couleur (temps réel)
+// Mettre à jour le stock d'une couleur
 export const updateColorStock = async (req, res) => {
   try {
     const { productId, colorId } = req.params;

@@ -1,51 +1,69 @@
-import { formatProductData, formatProductsArray } from '../utils/dataFormatter.js';
 import pool from '../config/database.js';
 
-// Obtenir toutes les catégories avec leurs sous-catégories
+/**
+ * ✅ SOLUTION UNIFIÉE: Categories uniquement avec parentId
+ * Supprime complètement la table subcategories
+ */
+
+// Obtenir toutes les catégories avec hiérarchie complète
 export const getAllCategories = async (req, res) => {
   try {
+    // Récupérer TOUTES les catégories (niveau 0, 1, 2, etc.)
     const result = await pool.query(`
       SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
-        COUNT(DISTINCT p.id) as productCount,
-        COUNT(DISTINCT child.id) as childCategoryCount
+        COUNT(DISTINCT p.id)::integer as productCount,
+        COUNT(DISTINCT child.id)::integer as childCategoryCount
       FROM categories c
       LEFT JOIN products p ON c.id = p.categoryId
       LEFT JOIN categories child ON c.id = child.parentid
       GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
       ORDER BY c.parentid ASC, c."order" ASC, c.name ASC
     `);
-    
-    const allCategories = result.rows;
+
+    // Construire l'arborescence
+    const categories = result.rows;
     const categoryMap = new Map();
-    allCategories.forEach(cat => {
-      categoryMap.set(cat.id, { ...cat, children: [] });
+    const rootCategories = [];
+
+    // Pass 1: Ajouter toutes les catégories à la map
+    categories.forEach(cat => {
+      categoryMap.set(cat.id, {
+        ...cat,
+        children: []
+      });
     });
-    
-    const roots = [];
-    allCategories.forEach(cat => {
-      if (cat.parentid) {
+
+    // Pass 2: Construire la hiérarchie
+    categories.forEach(cat => {
+      if (cat.parentid === null) {
+        // C'est une catégorie racine
+        rootCategories.push(categoryMap.get(cat.id));
+      } else {
+        // C'est un enfant, l'ajouter au parent
         const parent = categoryMap.get(cat.parentid);
         if (parent) {
           parent.children.push(categoryMap.get(cat.id));
         }
-      } else {
-        roots.push(categoryMap.get(cat.id));
       }
     });
+
+    console.log(`✅ ${rootCategories.length} catégories racines trouvées`);
+    console.log(`✅ ${categories.length} catégories totales`);
     
-    res.json(roots);
+    res.json(rootCategories);
   } catch (err) {
     console.error('Get categories error:', err);
     res.status(500).json({ error: 'Failed to get categories', details: err.message });
   }
 };
 
+// Obtenir toutes les catégories en version plate (sans hiérarchie imbriquée)
 export const getAllCategoriesFlat = async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
-        COUNT(DISTINCT p.id) as productCount,
-        COUNT(DISTINCT child.id) as childCategoryCount
+        COUNT(DISTINCT p.id)::integer as productCount,
+        COUNT(DISTINCT child.id)::integer as childCategoryCount
       FROM categories c
       LEFT JOIN products p ON c.id = p.categoryId
       LEFT JOIN categories child ON c.id = child.parentid
@@ -59,6 +77,7 @@ export const getAllCategoriesFlat = async (req, res) => {
   }
 };
 
+// Obtenir une catégorie avec tous ses enfants et produits
 export const getCategoryWithChildren = async (req, res) => {
   try {
     const { id } = req.params;
@@ -67,40 +86,58 @@ export const getCategoryWithChildren = async (req, res) => {
       return res.status(400).json({ error: 'ID de catégorie invalide' });
     }
 
+    const categoryId = parseInt(id);
+
+    // Récupérer la catégorie
     const category = await pool.query(`
       SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt 
       FROM categories c
       WHERE c.id = $1
-    `, [parseInt(id)]);
+    `, [categoryId]);
     
     if (category.rows.length === 0) {
       return res.status(404).json({ error: 'Category not found' });
     }
 
+    // Récupérer les enfants directs
     const children = await pool.query(`
       SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
         COUNT(DISTINCT p.id)::integer as productCount,
-        COUNT(DISTINCT child.id)::integer as childCategoryCount
+        COUNT(DISTINCT gc.id)::integer as childCategoryCount
       FROM categories c
       LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories child ON c.id = child.parentid
+      LEFT JOIN categories gc ON c.id = gc.parentid
       WHERE c.parentid = $1
       GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
       ORDER BY c."order" ASC, c.name ASC
-    `, [parseInt(id)]);
+    `, [categoryId]);
 
+    // Récupérer les produits directs et indirects (via enfants)
     const products = await pool.query(`
+      WITH RECURSIVE category_tree AS (
+        SELECT id FROM categories WHERE id = $1
+        UNION ALL
+        SELECT c.id FROM categories c
+        INNER JOIN category_tree ct ON c.parentid = ct.id
+      )
       SELECT p.id, p.name, p.slug, p.price, p.originalPrice, p.stock, p.featured, p.categoryId,
         (SELECT imageUrl FROM product_images WHERE productId = p.id AND isMainImage = true LIMIT 1) as image
       FROM products p
-      WHERE p.categoryId = $1
+      WHERE p.categoryId IN (SELECT id FROM category_tree)
       ORDER BY p.name ASC
-    `, [parseInt(id)]);
+    `, [categoryId]);
+
+    const totalCount = products.rows.length;
+    const directCount = products.rows.filter(p => p.categoryId === categoryId).length;
+    const indirectCount = totalCount - directCount;
 
     res.json({
       ...category.rows[0],
       children: children.rows,
-      products: products.rows
+      products: products.rows,
+      productCount: totalCount,
+      directProductCount: directCount,
+      indirectProductCount: indirectCount
     });
   } catch (err) {
     console.error('Get category error:', err);
@@ -108,6 +145,7 @@ export const getCategoryWithChildren = async (req, res) => {
   }
 };
 
+// Obtenir les enfants directs d'une catégorie
 export const getChildCategories = async (req, res) => {
   try {
     const { parentId } = req.params;
@@ -135,6 +173,35 @@ export const getChildCategories = async (req, res) => {
   }
 };
 
+// ✅ Cette route EST OBSOLÈTE - les sous-catégories sont maintenant des catégories
+// On la garde pour la compatibilité arrière, mais elle appelle getChildCategories
+export const getSubcategoriesByCategory = async (req, res) => {
+  try {
+    const { categoryId } = req.params;
+    
+    if (!categoryId || isNaN(parseInt(categoryId))) {
+      return res.status(400).json({ error: 'ID de catégorie invalide' });
+    }
+
+    // Déléguer à getChildCategories
+    const result = await pool.query(`
+      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+        COUNT(DISTINCT p.id)::integer as productCount
+      FROM categories c
+      LEFT JOIN products p ON c.id = p.categoryId
+      WHERE c.parentid = $1
+      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      ORDER BY c.name ASC
+    `, [parseInt(categoryId)]);
+    
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Get subcategories error:', err);
+    res.status(500).json({ error: 'Failed to get subcategories', details: err.message });
+  }
+};
+
+// Créer une catégorie (peut être parent ou enfant)
 export const createCategory = async (req, res) => {
   try {
     const { name, description, image, parentId } = req.body;
@@ -169,6 +236,7 @@ export const createCategory = async (req, res) => {
   }
 };
 
+// Mettre à jour une catégorie
 export const updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
@@ -222,13 +290,12 @@ export const updateCategory = async (req, res) => {
   }
 };
 
-// ✅ CORRIGÉ: Supprimer une catégorie (Admin) - AVEC TRANSACTIONS
+// Supprimer une catégorie (récursive avec transactions)
 export const deleteCategory = async (req, res) => {
   const client = await pool.connect();
   try {
     const { id } = req.params;
     
-    // VALIDATION STRICTE
     if (!id || isNaN(parseInt(id))) {
       return res.status(400).json({ error: 'ID de catégorie invalide' });
     }
@@ -245,7 +312,7 @@ export const deleteCategory = async (req, res) => {
     await client.query('BEGIN');
     console.log(`🗑️ Suppression de la catégorie ${categoryId}`);
 
-    // 1️⃣ Récupérer TOUS les IDs de produits (UNIQUEMENT de cette catégorie et ses sous-catégories)
+    // 1️⃣ Récupérer TOUS les IDs de produits (catégorie + enfants récursifs)
     const allProductIds = await client.query(`
       WITH RECURSIVE category_tree AS (
         SELECT id FROM categories WHERE id = $1
@@ -259,7 +326,7 @@ export const deleteCategory = async (req, res) => {
     const productIds = allProductIds.rows.map(r => r.id);
     console.log(`📊 Produits à supprimer: ${productIds.length}`);
 
-    // 2️⃣ Supprimer les reviews
+    // 2️⃣ Supprimer les données liées aux produits
     if (productIds.length > 0) {
       await client.query('DELETE FROM reviews WHERE productId = ANY($1)', [productIds]);
       await client.query('DELETE FROM product_images WHERE productId = ANY($1)', [productIds]);
@@ -269,7 +336,7 @@ export const deleteCategory = async (req, res) => {
       await client.query('DELETE FROM products WHERE id = ANY($1)', [productIds]);
     }
 
-    // 3️⃣ Supprimer les sous-catégories (UNIQUEMENT celles de cette catégorie)
+    // 3️⃣ Supprimer les catégories enfants (récursivement)
     await client.query(`
       WITH RECURSIVE category_tree AS (
         SELECT id FROM categories WHERE parentid = $1
@@ -286,7 +353,7 @@ export const deleteCategory = async (req, res) => {
     // COMMIT TRANSACTION
     await client.query('COMMIT');
 
-    console.log(`✅ Catégorie ${categoryId} supprimée`);
+    console.log(`✅ Catégorie ${categoryId} et ses enfants supprimés`);
     res.json({ message: 'Catégorie supprimée avec succès', deletedProducts: productIds.length });
   } catch (err) {
     try {
@@ -301,6 +368,7 @@ export const deleteCategory = async (req, res) => {
   }
 };
 
+// Réordonner les catégories
 export const reorderCategory = async (req, res) => {
   try {
     const { id } = req.params;

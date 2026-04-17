@@ -3,6 +3,7 @@ import {
   getAllCategories,
   getCategoryWithChildren,
   getChildCategories,
+  getSubcategoriesByCategory,
   createCategory, 
   updateCategory, 
   deleteCategory,
@@ -16,6 +17,7 @@ const router = express.Router();
 router.get('/', getAllCategories);
 // 🔴 Routes spécifiques AVANT les génériques
 router.get('/:parentId/children', getChildCategories);
+router.get('/:categoryId/subcategories', getSubcategoriesByCategory);
 router.get('/:id', getCategoryWithChildren);
 
 // Routes admin
