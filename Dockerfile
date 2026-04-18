@@ -14,9 +14,26 @@ RUN npm ci --only=production && \
     npm cache clean --force
 
 # Copier le code source
+FROM node:18-alpine
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Définir NODE_ENV
+ENV NODE_ENV=production
+
+# Copier les fichiers de dépendances
+COPY package*.json ./
+
+# Installer les dépendances de production uniquement
+RUN npm ci --only=production && \
+    npm cache clean --force
+
+# Copier le code source
 COPY src ./src
 COPY migrations ./migrations
 COPY scripts ./scripts
+COPY add-colors-to-products.js ./
 
 # Port d'exposition
 EXPOSE 5000
@@ -25,5 +42,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:5000/api/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
-# Script d'entrée qui exécute les migrations puis démarre l'app
-ENTRYPOINT ["sh", "-c", "node scripts/init-db.js && npm start"]
+# Script d'entrée qui exécute les migrations, ajoute les couleurs, puis démarre l'app
+ENTRYPOINT ["sh", "-c", "node scripts/init-db.js && node add-colors-to-products.js && npm start"]
