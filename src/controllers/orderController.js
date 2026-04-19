@@ -358,3 +358,50 @@ export const updateOrderStatus = async (req, res) => {
     res.status(500).json({ error: 'Erreur lors de la mise à jour de la commande' });
   }
 };
+
+// 🆕 NOUVEAU: Réessayer la synchronisation Shopify pour une commande
+export const retrySyncWithShopify = async (req, res) => {
+  try {
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({ error: 'Authentification requise' });
+    }
+
+    const { orderId } = req.params;
+    const userId = req.user.id;
+
+    if (!orderId || isNaN(orderId)) {
+      return res.status(400).json({ error: 'ID de commande invalide' });
+    }
+
+    // Vérifier que la commande appartient à l'utilisateur
+    const order = await pool.query(
+      'SELECT * FROM orders WHERE id = $1 AND user_id = $2',
+      [parseInt(orderId), userId]
+    );
+
+    if (order.rows.length === 0) {
+      return res.status(404).json({ error: 'Commande non trouvée' });
+    }
+
+    // Réessayer la synchronisation avec Shopify
+    try {
+      const result = await shopifyOrdersService.sendOrderToShopify(order.rows[0]);
+      
+      res.json({
+        success: true,
+        message: 'Commande resynchronisée avec Shopify',
+        shopifyOrderId: result.shopifyOrderId,
+        shopifyOrderNumber: result.shopifyOrderNumber
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: 'Erreur lors de la resynchronisation avec Shopify',
+        details: error.message
+      });
+    }
+  } catch (err) {
+    console.error('Retry sync error:', err);
+    res.status(500).json({ error: 'Erreur lors de la resynchronisation' });
+  }
+};
