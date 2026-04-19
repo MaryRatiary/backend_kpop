@@ -55,6 +55,33 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
+// ✅ Routes pour l'installation Shopify et la racine
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'API Sinoa KPOP',
+    status: 'online',
+    version: '1.0.0',
+    shopifyIntegration: 'enabled'
+  });
+});
+
+app.post('/', (req, res) => {
+  res.json({ 
+    message: 'API Sinoa KPOP',
+    status: 'online',
+    version: '1.0.0'
+  });
+});
+
+// Route pour l'installation de l'app Shopify
+app.get('/install', (req, res) => {
+  res.json({ 
+    message: 'Shopify App Installation',
+    status: 'ready',
+    appName: 'Sinoa KPOP'
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productsRoutes);
