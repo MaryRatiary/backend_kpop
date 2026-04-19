@@ -4,7 +4,7 @@ import shopifyOrdersService from '../services/shopifyOrders.js';
 // Créer une commande à partir du panier
 export const createOrder = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = req.user?.id;
     const { 
       items, 
       shippingAddress, 
@@ -32,6 +32,18 @@ export const createOrder = async (req, res) => {
 
     if (!paymentMethod) {
       return res.status(400).json({ error: 'La méthode de paiement est obligatoire' });
+    }
+
+    // Vérifier que l'utilisateur existe en base de données si userId est présent
+    if (userId) {
+      const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [userId]);
+      if (userCheck.rows.length === 0) {
+        console.error(`❌ Utilisateur avec ID ${userId} n'existe pas en base de données`);
+        return res.status(401).json({ 
+          error: 'Utilisateur non trouvé. Veuillez vous reconnecter.',
+          code: 'USER_NOT_FOUND'
+        });
+      }
     }
 
     // Calculer le prix total et valider les articles
@@ -80,7 +92,7 @@ export const createOrder = async (req, res) => {
        VALUES ($1, $2, $3, $4, 'pending', 'unpaid', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
       [
-        userId, 
+        userId || null, 
         totalPrice, 
         shippingAddress, 
         paymentMethod,
@@ -99,7 +111,7 @@ export const createOrder = async (req, res) => {
 
     const orderId = order.rows[0].id;
 
-    // Ajouter les articles de la commande - CORRECTION: order_id, product_id
+    // Ajouter les articles de la commande
     for (const item of itemsData) {
       await pool.query(
         `INSERT INTO order_items (order_id, product_id, quantity, price, size, color)
@@ -142,6 +154,15 @@ export const createOrder = async (req, res) => {
     console.error('Error message:', err.message);
     console.error('Error code:', err.code);
     console.error('Error detail:', err.detail);
+    
+    // Gérer les erreurs de contrainte étrangère de manière plus lisible
+    if (err.code === '23503') {
+      return res.status(401).json({ 
+        error: 'Utilisateur invalide. Veuillez vous reconnecter et réessayer.',
+        code: 'FOREIGN_KEY_ERROR'
+      });
+    }
+    
     res.status(500).json({ 
       error: 'Erreur lors de la création de la commande',
       message: err.message,
@@ -151,7 +172,8 @@ export const createOrder = async (req, res) => {
   }
 };
 
-// Obtenir les commandes de l'utilisateur
+// ... existing code ...
+
 export const getUserOrders = async (req, res) => {
   try {
     if (!req.user || !req.user.id) {
@@ -177,7 +199,6 @@ export const getUserOrders = async (req, res) => {
   }
 };
 
-// Obtenir les détails complets d'une commande (utilisateur)
 export const getOrderById = async (req, res) => {
   try {
     if (!req.user || !req.user.id) {
@@ -200,7 +221,6 @@ export const getOrderById = async (req, res) => {
       return res.status(404).json({ error: 'Commande non trouvée' });
     }
 
-    // CORRECTION: Utiliser snake_case pour order_id, product_id, image_url, is_main_image
     const items = await pool.query(
       `SELECT oi.*, p.name, p.slug, p.price, pi.image_url
        FROM order_items oi
@@ -211,7 +231,6 @@ export const getOrderById = async (req, res) => {
       [parseInt(orderId)]
     );
 
-    // Récupérer le statut de synchronisation Shopify
     const syncStatus = await pool.query(
       `SELECT * FROM orders_to_shopify_sync WHERE local_order_id = $1`,
       [parseInt(orderId)]
@@ -228,7 +247,6 @@ export const getOrderById = async (req, res) => {
   }
 };
 
-// Obtenir les détails complets d'une commande (ADMIN)
 export const getOrderByIdAdmin = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -246,7 +264,6 @@ export const getOrderByIdAdmin = async (req, res) => {
       return res.status(404).json({ error: 'Commande non trouvée' });
     }
 
-    // CORRECTION: Utiliser snake_case
     const items = await pool.query(
       `SELECT oi.*, p.name, p.slug, p.price, pi.image_url
        FROM order_items oi
@@ -257,7 +274,6 @@ export const getOrderByIdAdmin = async (req, res) => {
       [parseInt(orderId)]
     );
 
-    // Récupérer le statut de synchronisation Shopify
     const syncStatus = await pool.query(
       `SELECT * FROM orders_to_shopify_sync WHERE local_order_id = $1`,
       [parseInt(orderId)]
@@ -274,7 +290,6 @@ export const getOrderByIdAdmin = async (req, res) => {
   }
 };
 
-// Annuler une commande
 export const cancelOrder = async (req, res) => {
   try {
     if (!req.user || !req.user.id) {
@@ -288,7 +303,6 @@ export const cancelOrder = async (req, res) => {
       return res.status(400).json({ error: 'ID de commande invalide' });
     }
 
-    // Vérifier que la commande appartient à l'utilisateur
     const order = await pool.query(
       'SELECT * FROM orders WHERE id = $1 AND user_id = $2',
       [parseInt(orderId), userId]
@@ -302,7 +316,6 @@ export const cancelOrder = async (req, res) => {
       return res.status(400).json({ error: 'Seules les commandes en attente peuvent être annulées' });
     }
 
-    // Restaurer le stock - CORRECTION: order_id
     const items = await pool.query('SELECT * FROM order_items WHERE order_id = $1', [parseInt(orderId)]);
     for (const item of items.rows) {
       await pool.query(
@@ -311,7 +324,6 @@ export const cancelOrder = async (req, res) => {
       );
     }
 
-    // Mettre à jour le statut
     const result = await pool.query(
       'UPDATE orders SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING *',
       ['cancelled', parseInt(orderId)]
@@ -324,7 +336,6 @@ export const cancelOrder = async (req, res) => {
   }
 };
 
-// Mettre à jour le statut d'une commande (ADMIN)
 export const updateOrderStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -334,7 +345,6 @@ export const updateOrderStatus = async (req, res) => {
       return res.status(400).json({ error: 'ID de commande invalide' });
     }
 
-    // Valider les statuts
     const validStatuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
     const validPaymentStatuses = ['unpaid', 'paid', 'refunded'];
 
@@ -369,7 +379,6 @@ export const updateOrderStatus = async (req, res) => {
   }
 };
 
-// Réessayer la synchronisation Shopify pour une commande
 export const retrySyncWithShopify = async (req, res) => {
   try {
     if (!req.user || !req.user.id) {
@@ -383,7 +392,6 @@ export const retrySyncWithShopify = async (req, res) => {
       return res.status(400).json({ error: 'ID de commande invalide' });
     }
 
-    // Vérifier que la commande appartient à l'utilisateur
     const order = await pool.query(
       'SELECT * FROM orders WHERE id = $1 AND user_id = $2',
       [parseInt(orderId), userId]
@@ -393,7 +401,6 @@ export const retrySyncWithShopify = async (req, res) => {
       return res.status(404).json({ error: 'Commande non trouvée' });
     }
 
-    // Réessayer la synchronisation avec Shopify
     try {
       const result = await shopifyOrdersService.sendOrderToShopify(order.rows[0]);
       
