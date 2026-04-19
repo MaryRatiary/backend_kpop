@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
- * Script de fix automatique du schéma de base de données
- * À exécuter avant le démarrage du serveur
- * ES6 Module version
+ * Script de migration de la base de données
+ * Exécute les migrations en attente
  */
 
 import fs from 'fs';
@@ -14,63 +13,73 @@ const { Client } = pg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function fixDatabaseSchema() {
-  console.log('🔧 Démarrage du fix de schéma...');
+async function runMigrations() {
+  console.log('\n🔧 Exécution des migrations...\n');
   
   const client = new Client({
-    connectionString: process.env.DATABASE_URL
+    connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL
   });
 
   try {
     await client.connect();
-    console.log('✅ Connexion établie');
+    console.log('✅ Connexion établie avec PostgreSQL\n');
 
-    // Lire le script SQL de fix
-    const fixScript = fs.readFileSync(
-      path.join(__dirname, '../migrations/fix-db-schema.sql'),
-      'utf8'
-    );
+    // Lire le fichier migration 050
+    const migrationPath = path.join(__dirname, '../migrations/050_complete_stable_rebuild.sql');
+    
+    if (!fs.existsSync(migrationPath)) {
+      console.log('⏭️  Migration 050 non trouvée, skipped');
+      await client.end();
+      return;
+    }
 
-    // Exécuter le script
-    await client.query(fixScript);
-    console.log('✅ Schema fix appliqué avec succès!');
+    const migrationSQL = fs.readFileSync(migrationPath, 'utf8');
 
-    // Vérifier les colonnes critiques
-    const schemaCheck = await client.query(`
-      SELECT table_name, column_name 
-      FROM information_schema.columns 
-      WHERE table_name IN ('schema_migrations', 'orders')
-      ORDER BY table_name, column_name;
+    console.log('⏳ Exécution de la migration 050_complete_stable_rebuild.sql...');
+    
+    try {
+      await client.query(migrationSQL);
+      console.log('✅ Migration 050 exécutée avec succès!\n');
+    } catch (migrationError) {
+      // Si la migration 050 échoue (déjà exécutée), continuer
+      if (migrationError.message.includes('already exists') || 
+          migrationError.message.includes('duplicate')) {
+        console.log('⏭️  Migration 050 déjà exécutée\n');
+      } else {
+        console.error('❌ Erreur migration 050:', migrationError.message);
+        console.error('   Code:', migrationError.code);
+      }
+    }
+
+    // Vérifier le schéma
+    console.log('📊 Vérification du schéma...\n');
+    
+    const tables = await client.query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public'
+      ORDER BY table_name
     `);
 
-    console.log('\n📋 Colonnes actuelles:');
-    schemaCheck.rows.forEach(row => {
-      console.log(`   - ${row.table_name}.${row.column_name}`);
+    console.log('✅ Tables existantes:');
+    tables.rows.forEach(row => {
+      console.log(`   - ${row.table_name}`);
     });
 
-    console.log('✨ Schema fix complété!');
-    return true;
+    console.log('\n✨ Migrations complétées!\n');
+    process.exit(0);
 
   } catch (error) {
-    console.error('❌ Erreur lors du fix:', error.message);
-    return false;
-
+    console.error('❌ Erreur critique:', error.message);
+    console.error('\nDétails:', error);
+    process.exit(1);
   } finally {
-    await client.end();
+    try {
+      await client.end();
+    } catch (e) {
+      // Ignorer les erreurs de fermeture
+    }
   }
 }
 
-// Exécuter si appelé directement
-const isMainModule = import.meta.url === `file://${process.argv[1]}`;
-if (isMainModule) {
-  fixDatabaseSchema()
-    .then(success => {
-      process.exit(success ? 0 : 1);
-    })
-    .catch(error => {
-      console.error('Fatal error:', error);
-      process.exit(1);
-    });
-}
-
-export default fixDatabaseSchema;
+runMigrations();

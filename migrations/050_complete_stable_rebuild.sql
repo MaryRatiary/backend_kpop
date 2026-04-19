@@ -5,10 +5,7 @@
 
 BEGIN;
 
--- ============================================================
--- ÉTAPE 1: DROP DE TOUTES LES TABLES (cascade)
--- ============================================================
-
+-- DROP DE TOUTES LES TABLES (cascade)
 DROP TABLE IF EXISTS orders_to_shopify_sync CASCADE;
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
@@ -23,21 +20,15 @@ DROP TABLE IF EXISTS kpop_groups CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
 DROP TABLE IF EXISTS schema_migrations CASCADE;
 
--- ============================================================
--- ÉTAPE 2: CRÉATION DE LA TABLE SCHEMA_MIGRATIONS
--- ============================================================
-
+-- CRÉATION DE LA TABLE SCHEMA_MIGRATIONS
 CREATE TABLE schema_migrations (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) UNIQUE NOT NULL,
   applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
--- ÉTAPE 3: CRÉATION DES TABLES (snake_case uniquement)
--- ============================================================
+-- CRÉATION DES TABLES (snake_case uniquement)
 
--- Table utilisateurs
 CREATE TABLE users (
   id SERIAL PRIMARY KEY,
   email VARCHAR(255) UNIQUE NOT NULL,
@@ -56,7 +47,6 @@ CREATE TABLE users (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table groupes KPOP
 CREATE TABLE kpop_groups (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) UNIQUE NOT NULL,
@@ -67,7 +57,6 @@ CREATE TABLE kpop_groups (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table catégories
 CREATE TABLE categories (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
@@ -82,7 +71,6 @@ CREATE TABLE categories (
   UNIQUE (parent_id, slug)
 );
 
--- Table sous-catégories
 CREATE TABLE subcategories (
   id SERIAL PRIMARY KEY,
   category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
@@ -95,7 +83,6 @@ CREATE TABLE subcategories (
   UNIQUE(category_id, slug)
 );
 
--- Table produits
 CREATE TABLE products (
   id SERIAL PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
@@ -114,7 +101,6 @@ CREATE TABLE products (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table images de produits
 CREATE TABLE product_images (
   id SERIAL PRIMARY KEY,
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -125,7 +111,6 @@ CREATE TABLE product_images (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table tailles produits
 CREATE TABLE product_sizes (
   id SERIAL PRIMARY KEY,
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -136,7 +121,6 @@ CREATE TABLE product_sizes (
   UNIQUE(product_id, size)
 );
 
--- Table couleurs produits
 CREATE TABLE product_colors (
   id SERIAL PRIMARY KEY,
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -148,7 +132,6 @@ CREATE TABLE product_colors (
   UNIQUE(product_id, color_name)
 );
 
--- Table avis
 CREATE TABLE reviews (
   id SERIAL PRIMARY KEY,
   product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
@@ -159,7 +142,6 @@ CREATE TABLE reviews (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table commandes
 CREATE TABLE orders (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -186,7 +168,6 @@ CREATE TABLE orders (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table articles de commande
 CREATE TABLE order_items (
   id SERIAL PRIMARY KEY,
   order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -198,7 +179,6 @@ CREATE TABLE order_items (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Table synchronisation Shopify
 CREATE TABLE orders_to_shopify_sync (
   id SERIAL PRIMARY KEY,
   local_order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
@@ -210,34 +190,23 @@ CREATE TABLE orders_to_shopify_sync (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ============================================================
--- ÉTAPE 4: CRÉATION DES INDEX
--- ============================================================
-
+-- CRÉATION DES INDEX
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_role ON users(role);
-
 CREATE INDEX idx_categories_slug ON categories(slug);
 CREATE INDEX idx_categories_parent_id ON categories(parent_id);
-
 CREATE INDEX idx_subcategories_category_id ON subcategories(category_id);
 CREATE INDEX idx_subcategories_slug ON subcategories(slug);
-
 CREATE INDEX idx_products_slug ON products(slug);
 CREATE INDEX idx_products_category_id ON products(category_id);
 CREATE INDEX idx_products_subcategory_id ON products(subcategory_id);
 CREATE INDEX idx_products_group_id ON products(group_id);
 CREATE INDEX idx_products_featured ON products(featured);
-
 CREATE INDEX idx_product_images_product_id ON product_images(product_id);
-
 CREATE INDEX idx_product_sizes_product_id ON product_sizes(product_id);
-
 CREATE INDEX idx_product_colors_product_id ON product_colors(product_id);
-
 CREATE INDEX idx_reviews_product_id ON reviews(product_id);
 CREATE INDEX idx_reviews_user_id ON reviews(user_id);
-
 CREATE INDEX idx_orders_user_id ON orders(user_id);
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_orders_payment_status ON orders(payment_status);
@@ -250,19 +219,13 @@ CREATE INDEX idx_orders_shopify_id ON orders(shopify_order_id);
 CREATE INDEX idx_orders_created_at ON orders(created_at DESC);
 CREATE INDEX idx_orders_updated_at ON orders(updated_at DESC);
 CREATE INDEX idx_orders_tracking_number ON orders(tracking_number);
-
 CREATE INDEX idx_order_items_order_id ON order_items(order_id);
 CREATE INDEX idx_order_items_product_id ON order_items(product_id);
-
 CREATE INDEX idx_orders_to_shopify_sync_local_order_id ON orders_to_shopify_sync(local_order_id);
 CREATE INDEX idx_orders_to_shopify_sync_shopify_order_id ON orders_to_shopify_sync(shopify_order_id);
 CREATE INDEX idx_orders_to_shopify_sync_status ON orders_to_shopify_sync(sync_status);
 
--- ============================================================
--- ÉTAPE 5: CRÉATION DES TRIGGERS
--- ============================================================
-
--- Trigger pour updated_at sur users
+-- CRÉATION DES TRIGGERS
 CREATE OR REPLACE FUNCTION update_users_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -277,7 +240,6 @@ BEFORE UPDATE ON users
 FOR EACH ROW
 EXECUTE FUNCTION update_users_updated_at();
 
--- Trigger pour updated_at sur categories
 CREATE OR REPLACE FUNCTION update_categories_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -292,7 +254,6 @@ BEFORE UPDATE ON categories
 FOR EACH ROW
 EXECUTE FUNCTION update_categories_updated_at();
 
--- Trigger pour updated_at sur products
 CREATE OR REPLACE FUNCTION update_products_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -307,7 +268,6 @@ BEFORE UPDATE ON products
 FOR EACH ROW
 EXECUTE FUNCTION update_products_updated_at();
 
--- Trigger pour updated_at sur orders
 CREATE OR REPLACE FUNCTION update_orders_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -322,19 +282,8 @@ BEFORE UPDATE ON orders
 FOR EACH ROW
 EXECUTE FUNCTION update_orders_updated_at();
 
--- ============================================================
--- ÉTAPE 6: MARQUER LA MIGRATION COMME EXÉCUTÉE
--- ============================================================
-
+-- ENREGISTRER LA MIGRATION
 INSERT INTO schema_migrations (name, applied_at)
 VALUES ('050_complete_stable_rebuild', CURRENT_TIMESTAMP);
 
 COMMIT;
-
--- ============================================================
--- MESSAGE DE CONFIRMATION
--- ============================================================
-
-\echo '✅ Base de données reconstruite avec succès!'
-\echo '📊 Toutes les tables créées en snake_case'
-\echo '🔧 Index et triggers configurés'
