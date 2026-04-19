@@ -4,7 +4,7 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "fix-db": "node src/fix-schema.js",
+    "fix-db": "node scripts/fix-db.js",
     "prestart": "npm run fix-db",
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
