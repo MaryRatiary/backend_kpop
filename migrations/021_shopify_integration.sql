@@ -62,13 +62,15 @@ CREATE TABLE IF NOT EXISTS shopify_webhook_logs (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Index pour les performances
-CREATE INDEX idx_shopify_orders_status ON shopify_orders(status);
-CREATE INDEX idx_shopify_orders_created ON shopify_orders(created_at DESC);
-CREATE INDEX idx_shopify_order_items_order ON shopify_order_items(shopify_order_id);
-CREATE INDEX idx_shopify_products_mapping ON shopify_products(product_id, shopify_id);
+-- Index pour les performances (avec IF NOT EXISTS)
+CREATE INDEX IF NOT EXISTS idx_shopify_orders_status ON shopify_orders(status);
+CREATE INDEX IF NOT EXISTS idx_shopify_orders_created ON shopify_orders(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_shopify_order_items_order ON shopify_order_items(shopify_order_id);
+CREATE INDEX IF NOT EXISTS idx_shopify_products_mapping ON shopify_products(product_id, shopify_id);
 
 -- Insertion de la migration dans schema_migrations
 INSERT INTO schema_migrations (name, applied_at) 
 VALUES ('021_shopify_integration', CURRENT_TIMESTAMP)
 ON CONFLICT DO NOTHING;
+
+COMMIT;

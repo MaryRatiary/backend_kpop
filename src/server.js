@@ -14,6 +14,7 @@ import cartRoutes from './routes/cart.js';
 import checkoutRoutes from './routes/checkout.js';
 import dashboardRoutes from './routes/dashboard.js';
 import shopifyRoutes from './routes/shopify.js';
+import shopifyOrdersRoutes from './routes/shopify-orders.js';
 
 dotenv.config();
 
@@ -63,6 +64,7 @@ app.use('/api/cart', cartRoutes);
 app.use('/api/checkout', checkoutRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/shopify', shopifyRoutes);
+app.use('/api/admin/shopify', shopifyOrdersRoutes);
 
 // Gestion des erreurs
 app.use((err, req, res, next) => {
@@ -122,10 +124,10 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`✅ Serveur démarré sur le port ${PORT}`);
       console.log(`\n🎉 Serveur en ligne!`);
-      console.log(`�� Environnement: ${NODE_ENV}`);
+      console.log(`🌍 Environnement: ${NODE_ENV}`);
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
       console.log(`🔗 Frontend URL: ${frontendUrl}`);
-      console.log(`🛒 Shopify Integration: ${shopifyUrl ? '✅ Activée' : '❌ Désactivée'}`);
+      console.log(`�� Shopify Integration: ${shopifyUrl ? '✅ Activée' : '❌ Désactivée'}`);
       console.log('\n');
     });
   } catch (error) {

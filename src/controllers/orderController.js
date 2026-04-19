@@ -1,4 +1,5 @@
 import pool from '../config/database.js';
+import shopifyOrdersService from '../services/shopifyOrders.js';
 
 // Créer une commande à partir du panier
 export const createOrder = async (req, res) => {
@@ -56,7 +57,7 @@ export const createOrder = async (req, res) => {
       itemsData.push({ ...item, price, productId: parseInt(item.productId) });
     }
 
-    // Créer la commande avec tous les détails (utiliser les noms corrects de colonnes)
+    // Créer la commande avec tous les détails
     const order = await pool.query(
       `INSERT INTO orders (
         userId, 
@@ -113,10 +114,28 @@ export const createOrder = async (req, res) => {
       );
     }
 
+    // 🔄 Envoyer la commande à Shopify en arrière-plan (asynchrone)
+    const orderWithDetails = {
+      id: orderId,
+      ...order.rows[0]
+    };
+
+    shopifyOrdersService.sendOrderToShopify(orderWithDetails)
+      .then(() => {
+        console.log(`✅ Commande #${orderId} synchronisée avec Shopify`);
+      })
+      .catch((error) => {
+        console.error(`⚠️  Erreur synchronisation Shopify pour commande #${orderId}:`, error.message);
+      });
+
     res.status(201).json({
       message: 'Commande créée avec succès',
       order: order.rows[0],
-      items: itemsData
+      items: itemsData,
+      shopifySync: {
+        status: 'en_attente',
+        message: 'La commande sera synchronisée avec Shopify...'
+      }
     });
   } catch (err) {
     console.error('Create order error:', err);
@@ -183,9 +202,16 @@ export const getOrderById = async (req, res) => {
       [parseInt(orderId)]
     );
 
+    // Récupérer le statut de synchronisation Shopify
+    const syncStatus = await pool.query(
+      `SELECT * FROM orders_to_shopify_sync WHERE local_order_id = $1`,
+      [parseInt(orderId)]
+    );
+
     res.json({
       ...order.rows[0],
-      items: items.rows
+      items: items.rows,
+      shopifySync: syncStatus.rows[0] || { sync_status: 'non_synchronisée' }
     });
   } catch (err) {
     console.error('Get order error:', err);
@@ -221,9 +247,16 @@ export const getOrderByIdAdmin = async (req, res) => {
       [parseInt(orderId)]
     );
 
+    // Récupérer le statut de synchronisation Shopify
+    const syncStatus = await pool.query(
+      `SELECT * FROM orders_to_shopify_sync WHERE local_order_id = $1`,
+      [parseInt(orderId)]
+    );
+
     res.json({
       ...order.rows[0],
-      items: items.rows
+      items: items.rows,
+      shopifySync: syncStatus.rows[0] || { sync_status: 'non_synchronisée' }
     });
   } catch (err) {
     console.error('Get order error:', err);
