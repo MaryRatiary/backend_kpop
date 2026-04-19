@@ -7,15 +7,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Exécute automatiquement toutes les migrations manquantes
- * Utilisé au démarrage du serveur pour s'assurer que la BD est à jour
+ * Exécute la migration 050 pour reconstruire la BD proprement
  */
 async function runMigrations() {
   try {
     console.log('🔄 Vérification des migrations...');
 
-    // ✅ CORRECTION: Vérifier et créer la table schema_migrations si elle n'existe pas
-    // Avec gestion robuste des erreurs
+    // Vérifier si schema_migrations existe
     const tableExistsResult = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -29,8 +27,8 @@ async function runMigrations() {
       await pool.query(`
         CREATE TABLE schema_migrations (
           id SERIAL PRIMARY KEY,
-          migration VARCHAR(255) UNIQUE NOT NULL,
-          executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          name VARCHAR(255) UNIQUE NOT NULL,
+          applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
       `);
       console.log('✅ Table schema_migrations créée');
@@ -38,76 +36,43 @@ async function runMigrations() {
       console.log('✅ Table schema_migrations existe déjà');
     }
 
-    // Lire tous les fichiers de migration
+    // Essayer d'exécuter la migration 050
     const migrationsDir = path.join(__dirname, '../../migrations');
     
     if (!fs.existsSync(migrationsDir)) {
-      console.log('⚠️  Dossier migrations non trouvé, création...');
-      fs.mkdirSync(migrationsDir, { recursive: true });
+      console.log('⚠️  Dossier migrations non trouvé');
       return true;
     }
 
-    const migrationFiles = fs.readdirSync(migrationsDir)
-      .filter(file => file.endsWith('.sql'))
-      .sort();
-
-    console.log(`📋 Fichiers de migration trouvés: ${migrationFiles.length}`);
-
-    if (migrationFiles.length === 0) {
-      console.log('✅ Aucune migration à exécuter');
-      return true;
-    }
-
-    // Récupérer les migrations déjà exécutées
-    let executedMigrations = new Set();
-    try {
-      const executedResult = await pool.query(
-        'SELECT migration FROM schema_migrations'
-      );
-      executedMigrations = new Set(
-        executedResult.rows.map(row => row.migration)
-      );
-      console.log(`✅ Migrations déjà exécutées: ${executedMigrations.size}`);
-    } catch (error) {
-      console.warn('⚠️  Impossible de lire les migrations exécutées:', error.message);
-      executedMigrations = new Set();
-    }
-
-    // Exécuter les migrations manquantes
-    let executedCount = 0;
-    for (const file of migrationFiles) {
-      if (!executedMigrations.has(file)) {
-        try {
-          console.log(`⏳ Exécution de la migration: ${file}`);
-          
-          const migrationPath = path.join(migrationsDir, file);
-          const migrationSQL = fs.readFileSync(migrationPath, 'utf-8');
-          
-          // Exécuter la migration
-          await pool.query(migrationSQL);
-          
-          // Enregistrer la migration comme exécutée
-          await pool.query(
-            'INSERT INTO schema_migrations (migration) VALUES ($1)',
-            [file]
-          );
-          
-          console.log(`✅ Migration exécutée avec succès: ${file}`);
-          executedCount++;
-        } catch (error) {
-          console.error(`❌ Erreur lors de l'exécution de ${file}:`, error.message);
-          // Ne pas arrêter, continuer avec les autres migrations
+    const migration050Path = path.join(migrationsDir, '050_complete_stable_rebuild.sql');
+    
+    if (fs.existsSync(migration050Path)) {
+      try {
+        console.log('⏳ Exécution de la migration 050_complete_stable_rebuild.sql...');
+        const migrationSQL = fs.readFileSync(migration050Path, 'utf-8');
+        await pool.query(migrationSQL);
+        console.log('✅ Migration 050 exécutée avec succès!\n');
+        return true;
+      } catch (error) {
+        // Si la migration a déjà été exécutée, continuer
+        if (error.message.includes('already exists') || 
+            error.message.includes('duplicate') ||
+            error.message.includes('violates') ||
+            error.code === '42P07') {
+          console.log('⏭️  Migration 050 déjà exécutée ou BD déjà stable\n');
+          return true;
+        } else {
+          console.error('❌ Erreur migration 050:', error.message);
+          console.error('   Code:', error.code);
+          // Continuer quand même
+          return true;
         }
       }
-    }
-
-    if (executedCount > 0) {
-      console.log(`\n✨ ${executedCount} nouvelle(s) migration(s) exécutée(s)`);
     } else {
-      console.log('\n✅ Base de données à jour, aucune migration à exécuter');
+      console.log('⏭️  Migration 050 non trouvée');
+      return true;
     }
 
-    return true;
   } catch (error) {
     console.error('❌ Erreur lors du système de migrations:', error);
     return false;
