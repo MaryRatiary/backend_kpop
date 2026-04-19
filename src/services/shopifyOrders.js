@@ -36,7 +36,7 @@ class ShopifyOrdersService {
 
       // Récupérer les articles de la commande avec les bons noms de colonnes
       const itemsResult = await pool.query(
-        `SELECT oi.*, p.name, p.sku 
+        `SELECT oi.*, p.name, p.id as product_id
          FROM order_items oi
          JOIN products p ON oi.product_id = p.id
          WHERE oi.order_id = $1`,
@@ -47,7 +47,7 @@ class ShopifyOrdersService {
         title: item.name,
         quantity: item.quantity,
         price: item.price.toString(),
-        sku: item.sku || `SINOA-${item.product_id}`,
+        sku: `SINOA-${item.product_id}`,
         variant_id: item.variant_id || null,
       }));
 
