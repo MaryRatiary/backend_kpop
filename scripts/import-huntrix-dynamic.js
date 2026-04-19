@@ -168,9 +168,9 @@ const parseVariants = (variantDetails) => {
   return { colors, sizes };
 };
 
-const parseImages = (imageUrls) => {
-  if (!imageUrls) return [];
-  return imageUrls.split('|').map(url => url.trim()).filter(url => url && url.startsWith('http'));
+const parseImages = (image_urls) => {
+  if (!image_urls) return [];
+  return image_urls.split('|').map(url => url.trim()).filter(url => url && url.startsWith('http'));
 };
 
 const parseDate = (dateStr) => {
@@ -457,8 +457,8 @@ async function importHuntrixUnified() {
     await client.query('DELETE FROM product_images');
     await client.query('DELETE FROM reviews');
     await client.query('DELETE FROM products');
-    await client.query('DELETE FROM categories WHERE parentId IS NOT NULL');
-    await client.query('DELETE FROM categories WHERE parentId IS NULL');
+    await client.query('DELETE FROM categories WHERE parent_id IS NOT NULL');
+    await client.query('DELETE FROM categories WHERE parent_id IS NULL');
     await client.query('DELETE FROM kpop_groups');
     console.log('✓ Données supprimées\n');
 
@@ -467,8 +467,8 @@ async function importHuntrixUnified() {
       `INSERT INTO kpop_groups (name, slug, description) VALUES ($1, $2, $3) RETURNING id`,
       ['Huntrix', 'huntrix', 'Collection officielle Huntrix - Demon Hunters']
     );
-    const groupId = groupResult.rows[0].id;
-    console.log(`✓ Groupe Huntrix créé (ID: ${groupId})\n`);
+    const group_id = groupResult.rows[0].id;
+    console.log(`✓ Groupe Huntrix créé (ID: ${group_id})\n`);
 
     // 3. LIRE le CSV
     console.log('📖 Lecture du CSV...');
@@ -486,7 +486,7 @@ async function importHuntrixUnified() {
 
     for (const [parentName, parentData] of Object.entries(CATEGORY_STRUCTURE)) {
       const result = await client.query(
-        `INSERT INTO categories (name, slug, level, "order", description, parentId) 
+        `INSERT INTO categories (name, slug, level, "order", description, parent_id) 
          VALUES ($1, $2, $3, $4, $5, NULL) RETURNING id`,
         [parentName, slugify(parentName), 0, parentOrder++, parentData.description]
       );
@@ -497,7 +497,7 @@ async function importHuntrixUnified() {
 
     // 5. CRÉER les 6 catégories ENFANTS
     console.log('🏷️  Création des 6 catégories enfants...\n');
-    const childCategoryMap = {}; // { 'Parent > Child': categoryId }
+    const childCategoryMap = {}; // { 'Parent > Child': category_id }
 
     for (const [parentName, parentData] of Object.entries(CATEGORY_STRUCTURE)) {
       let childOrder = 0;
@@ -505,15 +505,15 @@ async function importHuntrixUnified() {
 
       for (const childData of parentData.children) {
         const result = await client.query(
-          `INSERT INTO categories (name, slug, parentId, level, "order", description) 
+          `INSERT INTO categories (name, slug, parent_id, level, "order", description) 
            VALUES ($1, $2, $3, 1, $4, $5) RETURNING id`,
           [childData.name, slugify(childData.name), parentCategories[parentName], childOrder++, childData.description]
         );
 
-        const categoryId = result.rows[0].id;
+        const category_id = result.rows[0].id;
         const key = `${parentName} > ${childData.name}`;
-        childCategoryMap[key] = categoryId;
-        console.log(`    └─ ${childData.name} (ID: ${categoryId})`);
+        childCategoryMap[key] = category_id;
+        console.log(`    └─ ${childData.name} (ID: ${category_id})`);
       }
       console.log();
     }
@@ -525,10 +525,10 @@ async function importHuntrixUnified() {
     for (const [parentName, parentData] of Object.entries(CATEGORY_STRUCTURE)) {
       for (const childData of parentData.children) {
         const key = `${parentName} > ${childData.name}`;
-        const categoryId = childCategoryMap[key];
+        const category_id = childCategoryMap[key];
 
         for (const productType of childData.products) {
-          productTypeToCategoryId[productType.toLowerCase()] = categoryId;
+          productTypeToCategoryId[productType.toLowerCase()] = category_id;
         }
       }
     }
@@ -543,9 +543,9 @@ async function importHuntrixUnified() {
 
     for (const record of records) {
       const productType = record.Type_Produit?.trim();
-      const categoryId = productTypeToCategoryId[productType?.toLowerCase()];
+      const category_id = productTypeToCategoryId[productType?.toLowerCase()];
 
-      if (!categoryId) {
+      if (!category_id) {
         unmappedTypes.add(productType);
         continue;
       }
@@ -553,15 +553,15 @@ async function importHuntrixUnified() {
       try {
         const productSlug = record.Handle?.trim() || slugify(record.Nom);
         const price = parseFloat(record.Prix_Min_EUR) || 0;
-        const originalPrice = parseFloat(record.Prix_Barre_EUR) || price;
+        const original_price = parseFloat(record.Prix_Barre_EUR) || price;
         const rating = record.Avis_Note ? parseFloat(record.Avis_Note) : 0;
-        const createdAt = parseDate(record.Date_Publication);
+        const created_at = parseDate(record.Date_Publication);
 
         const description = formatDescriptionAsMarkdown(record);
         
         // ✅ CORRIGÉ: Ajouter DEFAULT_STOCK au produit lui-même
         const productResult = await client.query(
-          `INSERT INTO products (name, slug, description, price, originalPrice, categoryId, groupId, rating, stock, createdAt)
+          `INSERT INTO products (name, slug, description, price, original_price, category_id, group_id, rating, stock, created_at)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
            RETURNING id`,
           [
@@ -569,23 +569,23 @@ async function importHuntrixUnified() {
             productSlug,
             description,
             price,
-            originalPrice,
-            categoryId,
-            groupId,
+            original_price,
+            category_id,
+            group_id,
             rating,
             DEFAULT_STOCK,  // ✅ Stock par défaut pour le produit
-            createdAt
+            created_at
           ]
         );
-        const productId = productResult.rows[0].id;
+        const product_id = productResult.rows[0].id;
 
         // Images
         const images = parseImages(record.Images_URLs);
         for (let i = 0; i < images.length; i++) {
           try {
             await client.query(
-              `INSERT INTO product_images (productId, imageUrl, isMainImage, "order") VALUES ($1, $2, $3, $4)`,
-              [productId, images[i], i === 0, i]
+              `INSERT INTO product_images (product_id, image_url, is_main_image, "order") VALUES ($1, $2, $3, $4)`,
+              [product_id, images[i], i === 0, i]
             );
             imagesCreated++;
           } catch (imgErr) {
@@ -599,8 +599,8 @@ async function importHuntrixUnified() {
         for (const color of variants.colors) {
           try {
             await client.query(
-              `INSERT INTO product_colors (productId, colorName, stock) VALUES ($1, $2, $3)`,
-              [productId, color, DEFAULT_STOCK]  // ✅ Stock par défaut pour couleur
+              `INSERT INTO product_colors (product_id, color_name, stock) VALUES ($1, $2, $3)`,
+              [product_id, color, DEFAULT_STOCK]  // ✅ Stock par défaut pour couleur
             );
             variantsCreated++;
           } catch (colorErr) {
@@ -610,8 +610,8 @@ async function importHuntrixUnified() {
         for (const size of variants.sizes) {
           try {
             await client.query(
-              `INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3)`,
-              [productId, size, DEFAULT_STOCK]  // ✅ Stock par défaut pour taille
+              `INSERT INTO product_sizes (product_id, size, stock) VALUES ($1, $2, $3)`,
+              [product_id, size, DEFAULT_STOCK]  // ✅ Stock par défaut pour taille
             );
             variantsCreated++;
           } catch (sizeErr) {

@@ -1,99 +1,81 @@
 /**
- * Utilitaire pour formater les données des produits
- * Nettoie et parse les données JSON imbriquées
+ * 📝 Data Formatter - Convertir les noms de colonnes en snake_case pour le frontend
  */
 
+// ✅ Formater un produit individuel
 export const formatProductData = (product) => {
   if (!product) return null;
 
-  // Parser les images si c'est un string
-  if (product.images && typeof product.images === 'string') {
-    try {
-      product.images = JSON.parse(product.images);
-    } catch (e) {
-      product.images = [];
-    }
-  }
-  if (!Array.isArray(product.images)) {
-    product.images = product.images ? [product.images] : [];
-  }
-
-  // Parser et nettoyer les sizes
-  if (product.sizes && Array.isArray(product.sizes)) {
-    product.sizes = product.sizes.map(size => {
-      // Si size.size est un string JSON, le parser
-      if (size.size && typeof size.size === 'string') {
-        try {
-          const parsed = JSON.parse(size.size);
-          return {
-            id: size.id,
-            productid: size.productid,
-            size: parsed.size || parsed,
-            stock: parsed.stock || size.stock || 0,
-            createdAt: size.createdat || size.createdAt,
-            updatedAt: size.updatedat || size.updatedAt
-          };
-        } catch (e) {
-          return {
-            id: size.id,
-            productid: size.productid,
-            size: size.size,
-            stock: size.stock || 0,
-            createdAt: size.createdat || size.createdAt,
-            updatedAt: size.updatedat || size.updatedAt
-          };
-        }
-      }
-      return size;
-    });
-  }
-  if (!Array.isArray(product.sizes)) {
-    product.sizes = [];
-  }
-
-  // Parser et nettoyer les colors
-  if (product.colors && Array.isArray(product.colors)) {
-    product.colors = product.colors.map(color => ({
-      id: color.id,
-      productid: color.productid,
-      colorName: color.colorname || color.colorName,
-      colorHex: color.colorhex || color.colorHex,
-      stock: color.stock || 0,
-      createdAt: color.createdat || color.createdAt,
-      updatedAt: color.updatedat || color.updatedAt
-    }));
-  }
-  if (!Array.isArray(product.colors)) {
-    product.colors = [];
-  }
-
-  // Normaliser les noms de colonnes (PostgreSQL retourne en minuscules)
   return {
+    // Identifiants et slugs
     id: product.id,
-    name: product.name,
     slug: product.slug,
+    name: product.name,
     description: product.description,
-    price: parseFloat(product.price),
-    originalPrice: product.originalprice ? parseFloat(product.originalprice) : null,
-    categoryId: product.categoryid,
-    categoryName: product.categoryname,
-    groupId: product.groupid,
-    groupName: product.groupname,
-    stock: product.stock || 0,
-    featured: product.featured || false,
-    sales: product.sales || 0,
-    image: product.image,
-    hoverImage: product.hoverimage,
+
+    // Prix - ✅ IMPORTANT: Convertir en nombres!
+    price: typeof product.price === 'string' ? parseFloat(product.price) : product.price,
+    original_price: typeof product.original_price === 'string' ? parseFloat(product.original_price) : product.original_price,
+
+    // Images - Retourner TOUS les formats possibles
+    image: product.image || product.imageUrl || null,
+    hover_image: product.hover_image || product.hoverImage || product.hoverimageg || null,
     images: product.images || [],
+
+    // Catégories - IMPORTANT: Mapper categoryName vers category_name
+    category_id: product.category_id,
+    category_name: product.categoryName || product.category_name || null,
+    group_id: product.group_id,
+    group_name: product.groupName || product.group_name || null,
+
+    // Stock et variantes
+    stock: product.stock || 0,
     sizes: product.sizes || [],
     colors: product.colors || [],
-    reviews: product.reviews || [],
-    createdAt: product.createdat || product.createdAt,
-    updatedAt: product.updatedat || product.updatedAt
+
+    // État du produit
+    featured: product.featured || false,
+    rating: typeof product.rating === 'string' ? parseFloat(product.rating) : (product.rating || 0),
+    sales: product.sales || 0,
+
+    // Timestamps
+    created_at: product.created_at || product.createdAt,
+    updated_at: product.updated_at || product.updatedAt,
+
+    // Avis
+    reviews: product.reviews || []
   };
 };
 
+// ✅ Formater un tableau de produits
 export const formatProductsArray = (products) => {
   if (!Array.isArray(products)) return [];
-  return products.map(formatProductData);
+  return products.map(product => formatProductData(product));
+};
+
+// ✅ Formater une catégorie individuelle
+export const formatCategoryData = (category) => {
+  if (!category) return null;
+
+  return {
+    id: category.id,
+    name: category.name,
+    slug: category.slug,
+    description: category.description,
+    image: category.image,
+    parent_id: category.parent_id || category.parentid || null,
+    level: category.level || 0,
+    order: category.order || 0,
+    product_count: category.product_count || category.productCount || 0,
+    child_category_count: category.child_category_count || category.childCategoryCount || 0,
+    created_at: category.created_at || category.createdAt,
+    updated_at: category.updated_at || category.updatedAt,
+    children: category.children || []
+  };
+};
+
+// ✅ Formater un tableau de catégories
+export const formatCategoriesArray = (categories) => {
+  if (!Array.isArray(categories)) return [];
+  return categories.map(category => formatCategoryData(category));
 };

@@ -4,31 +4,31 @@ import { formatProductData, formatProductsArray } from '../utils/dataFormatter.j
 // Obtenir tous les produits
 export const getAllProducts = async (req, res) => {
   try {
-    const { categoryId, groupId, featured, limit = 50000, offset = 0 } = req.query;
+    const { category_id, group_id, featured, limit = 50000, offset = 0 } = req.query;
     let query = `
       SELECT 
         p.*,
-        c.name as categoryName, 
+         c.name as category_name, 
         g.name as groupName,
-        (SELECT imageUrl FROM product_images WHERE productId = p.id AND isMainImage = true ORDER BY "order" ASC LIMIT 1) as image,
-        (SELECT imageUrl FROM product_images WHERE productId = p.id AND isHoverImage = true ORDER BY "order" ASC LIMIT 1) as hoverImage,
-        (SELECT json_agg(imageUrl ORDER BY "order" ASC) FROM product_images WHERE productId = p.id) as images,
-        (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
-        (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
+        (SELECT image_url FROM product_images WHERE product_id = p.id AND is_main_image = true ORDER BY "order" ASC LIMIT 1) as image,
+        (SELECT image_url FROM product_images WHERE product_id = p.id AND is_hover_image = true ORDER BY "order" ASC LIMIT 1) as hoverImage,
+        (SELECT json_agg(image_url ORDER BY "order" ASC) FROM product_images WHERE product_id = p.id) as images,
+        (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.product_id = p.id) as sizes,
+        (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.product_id = p.id) as colors
       FROM products p 
-      LEFT JOIN categories c ON p.categoryId = c.id 
-      LEFT JOIN kpop_groups g ON p.groupId = g.id 
+      LEFT JOIN categories c ON p.category_id = c.id 
+      LEFT JOIN kpop_groups g ON p.group_id = g.id 
       WHERE 1=1
     `;
     const params = [];
 
-    if (categoryId) {
-      query += ' AND p.categoryId = $' + (params.length + 1);
-      params.push(parseInt(categoryId));
+    if (category_id) {
+      query += ' AND p.category_id = $' + (params.length + 1);
+      params.push(parseInt(category_id));
     }
-    if (groupId) {
-      query += ' AND p.groupId = $' + (params.length + 1);
-      params.push(parseInt(groupId));
+    if (group_id) {
+      query += ' AND p.group_id = $' + (params.length + 1);
+      params.push(parseInt(group_id));
     }
     if (featured) {
       query += ' AND p.featured = true';
@@ -36,7 +36,7 @@ export const getAllProducts = async (req, res) => {
 
     // ✅ CORRIGÉ: Math.min supprimé — la limite est maintenant respectée telle quelle
     // Avant : Math.min(parseInt(limit) || 50, 100) → bloquait à 100 produits max
-    query += ' ORDER BY p.createdAt DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
+    query += ' ORDER BY p.created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(parseInt(limit) || 50000, parseInt(offset) || 0);
 
     const result = await pool.query(query, params);
@@ -59,14 +59,14 @@ export const getProductById = async (req, res) => {
 
     const product = await pool.query(`
       SELECT p.*, 
-             c.name as categoryName, 
+              c.name as category_name, 
              g.name as groupName,
-             (SELECT json_agg(imageUrl ORDER BY "order" ASC) FROM product_images WHERE productId = p.id) as images,
-             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
-             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
+             (SELECT json_agg(image_url ORDER BY "order" ASC) FROM product_images WHERE product_id = p.id) as images,
+             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.product_id = p.id) as sizes,
+             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.product_id = p.id) as colors
       FROM products p
-      LEFT JOIN categories c ON p.categoryId = c.id
-      LEFT JOIN kpop_groups g ON p.groupId = g.id
+      LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN kpop_groups g ON p.group_id = g.id
       WHERE p.id = $1
     `, [parseInt(id)]);
 
@@ -74,7 +74,7 @@ export const getProductById = async (req, res) => {
       return res.status(404).json({ error: 'Produit non trouvé' });
     }
 
-    const reviews = await pool.query('SELECT * FROM reviews WHERE productId = $1 ORDER BY createdAt DESC', [id]);
+    const reviews = await pool.query('SELECT * FROM reviews WHERE product_id = $1 ORDER BY created_at DESC', [id]);
 
     const formattedProduct = formatProductData({
       ...product.rows[0],
@@ -95,8 +95,8 @@ export const createProduct = async (req, res) => {
       name, 
       description,
       price, 
-      originalPrice, 
-      categoryId, 
+      original_price, 
+      category_id, 
       stock,
       sizes,
       colors
@@ -120,19 +120,19 @@ export const createProduct = async (req, res) => {
     const result = await pool.query(
       `INSERT INTO products (
         name, slug, description,
-        price, originalPrice, categoryId, stock
+        price, original_price, category_id, stock
       ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [name, slug, description || null, price, originalPrice || null, categoryId || null, stock || 0]
+      [name, slug, description || null, price, original_price || null, category_id || null, stock || 0]
     );
 
-    const productId = result.rows[0].id;
+    const product_id = result.rows[0].id;
 
     if (sizes && Array.isArray(sizes) && sizes.length > 0) {
       for (const size of sizes) {
         const defaultStock = ['XS', 'XXL'].includes(size) ? 10 : 15;
         await pool.query(
-          'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3) ON CONFLICT (productId, size) DO NOTHING',
-          [productId, size, defaultStock]
+          'INSERT INTO product_sizes (product_id, size, stock) VALUES ($1, $2, $3) ON CONFLICT (product_id, size) DO NOTHING',
+          [product_id, size, defaultStock]
         );
       }
     }
@@ -142,19 +142,19 @@ export const createProduct = async (req, res) => {
         const colorName = color.name || color;
         const defaultStock = ['noir', 'Noir', 'black', 'Black'].includes(colorName) ? 20 : 15;
         await pool.query(
-          'INSERT INTO product_colors (productId, colorName, colorHex, stock) VALUES ($1, $2, $3, $4) ON CONFLICT (productId, colorName) DO NOTHING',
-          [productId, colorName, color.hex || '#000000', defaultStock]
+          'INSERT INTO product_colors (product_id, colorName, colorHex, stock) VALUES ($1, $2, $3, $4) ON CONFLICT (product_id, colorName) DO NOTHING',
+          [product_id, colorName, color.hex || '#000000', defaultStock]
         );
       }
     }
 
     const completeProduct = await pool.query(`
       SELECT p.*, 
-             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
-             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
+             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.product_id = p.id) as sizes,
+             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.product_id = p.id) as colors
       FROM products p
       WHERE p.id = $1
-    `, [productId]);
+    `, [product_id]);
 
     const formatted = formatProductData(completeProduct.rows[0]);
     res.status(201).json(formatted);
@@ -172,8 +172,8 @@ export const updateProduct = async (req, res) => {
       name,
       description,
       price,
-      originalPrice,
-      categoryId,
+      original_price,
+      category_id,
       stock,
       featured,
       sizes,
@@ -225,17 +225,17 @@ export const updateProduct = async (req, res) => {
       updates.push(`price = $${paramIndex++}`);
       params.push(price);
     }
-    if (originalPrice !== undefined) {
-      updates.push(`originalPrice = $${paramIndex++}`);
-      params.push(originalPrice);
+    if (original_price !== undefined) {
+      updates.push(`original_price = $${paramIndex++}`);
+      params.push(original_price);
     }
     if (stock !== undefined) {
       updates.push(`stock = $${paramIndex++}`);
       params.push(Math.max(0, stock));
     }
-    if (categoryId !== undefined) {
-      updates.push(`categoryId = $${paramIndex++}`);
-      params.push(categoryId ? parseInt(categoryId) : null);
+    if (category_id !== undefined) {
+      updates.push(`category_id = $${paramIndex++}`);
+      params.push(category_id ? parseInt(category_id) : null);
     }
     if (featured !== undefined) {
       updates.push(`featured = $${paramIndex++}`);
@@ -261,22 +261,22 @@ export const updateProduct = async (req, res) => {
     }
 
     if (sizes && Array.isArray(sizes) && sizes.length > 0) {
-      await pool.query('DELETE FROM product_sizes WHERE productId = $1', [parseInt(id)]);
+      await pool.query('DELETE FROM product_sizes WHERE product_id = $1', [parseInt(id)]);
       
       for (const size of sizes) {
         await pool.query(
-          'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3)',
+          'INSERT INTO product_sizes (product_id, size, stock) VALUES ($1, $2, $3)',
           [parseInt(id), size, 0]
         );
       }
     }
 
     if (colors && Array.isArray(colors) && colors.length > 0) {
-      await pool.query('DELETE FROM product_colors WHERE productId = $1', [parseInt(id)]);
+      await pool.query('DELETE FROM product_colors WHERE product_id = $1', [parseInt(id)]);
       
       for (const color of colors) {
         await pool.query(
-          'INSERT INTO product_colors (productId, colorName, colorHex, stock) VALUES ($1, $2, $3, $4)',
+          'INSERT INTO product_colors (product_id, colorName, colorHex, stock) VALUES ($1, $2, $3, $4)',
           [parseInt(id), color.name || color, color.hex || '#000000', 0]
         );
       }
@@ -284,11 +284,11 @@ export const updateProduct = async (req, res) => {
 
     const completeProduct = await pool.query(`
       SELECT p.*, 
-             c.name as categoryName,
-             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
-             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
+              c.name as category_name,
+             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.product_id = p.id) as sizes,
+             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.product_id = p.id) as colors
       FROM products p
-      LEFT JOIN categories c ON p.categoryId = c.id
+      LEFT JOIN categories c ON p.category_id = c.id
       WHERE p.id = $1
     `, [parseInt(id)]);
 
@@ -310,26 +310,26 @@ export const deleteProduct = async (req, res) => {
       return res.status(400).json({ error: 'ID de produit invalide' });
     }
 
-    const productId = parseInt(id);
+    const product_id = parseInt(id);
 
-    const productCheck = await client.query('SELECT id FROM products WHERE id = $1', [productId]);
+    const productCheck = await client.query('SELECT id FROM products WHERE id = $1', [product_id]);
     if (productCheck.rows.length === 0) {
       return res.status(404).json({ error: 'Produit non trouvé' });
     }
 
     await client.query('BEGIN');
-    console.log(`🗑️ Suppression du produit ${productId}`);
+    console.log(`🗑️ Suppression du produit ${product_id}`);
 
-    await client.query('DELETE FROM reviews WHERE productId = $1', [productId]);
-    await client.query('DELETE FROM product_images WHERE productId = $1', [productId]);
-    await client.query('DELETE FROM product_sizes WHERE productId = $1', [productId]);
-    await client.query('DELETE FROM product_colors WHERE productId = $1', [productId]);
-    await client.query('DELETE FROM order_items WHERE productId = $1', [productId]);
-    await client.query('DELETE FROM products WHERE id = $1', [productId]);
+    await client.query('DELETE FROM reviews WHERE product_id = $1', [product_id]);
+    await client.query('DELETE FROM product_images WHERE product_id = $1', [product_id]);
+    await client.query('DELETE FROM product_sizes WHERE product_id = $1', [product_id]);
+    await client.query('DELETE FROM product_colors WHERE product_id = $1', [product_id]);
+    await client.query('DELETE FROM order_items WHERE product_id = $1', [product_id]);
+    await client.query('DELETE FROM products WHERE id = $1', [product_id]);
 
     await client.query('COMMIT');
 
-    console.log(`✅ Produit ${productId} supprimé`);
+    console.log(`✅ Produit ${product_id} supprimé`);
     res.json({ message: 'Produit supprimé avec succès' });
   } catch (err) {
     try {
@@ -347,25 +347,25 @@ export const deleteProduct = async (req, res) => {
 // Ajouter une image à un produit
 export const addProductImage = async (req, res) => {
   try {
-    const { productId } = req.params;
-    const { imageUrl, isMainImage, isHoverImage, order } = req.body;
+    const { product_id } = req.params;
+    const { image_url, is_main_image, is_hover_image, order } = req.body;
 
-    if (!imageUrl) {
+    if (!image_url) {
       return res.status(400).json({ error: 'L\'URL de l\'image est obligatoire' });
     }
 
-    if (!productId || isNaN(productId)) {
+    if (!product_id || isNaN(product_id)) {
       return res.status(400).json({ error: 'ID de produit invalide' });
     }
 
-    const productExists = await pool.query('SELECT id FROM products WHERE id = $1', [parseInt(productId)]);
+    const productExists = await pool.query('SELECT id FROM products WHERE id = $1', [parseInt(product_id)]);
     if (productExists.rows.length === 0) {
       return res.status(404).json({ error: 'Produit non trouvé' });
     }
     
     const result = await pool.query(
-      'INSERT INTO product_images (productId, imageUrl, isMainImage, isHoverImage, "order") VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [parseInt(productId), imageUrl, isMainImage || false, isHoverImage || false, order || 0]
+      'INSERT INTO product_images (product_id, image_url, is_main_image, is_hover_image, "order") VALUES ($1, $2, $3, $4, $5) RETURNING *',
+      [parseInt(product_id), image_url, is_main_image || false, is_hover_image || false, order || 0]
     );
 
     res.status(201).json(result.rows[0]);
@@ -387,20 +387,20 @@ export const addProductImage = async (req, res) => {
 // Ajouter une taille avec stock
 export const addProductSize = async (req, res) => {
   try {
-    const { productId } = req.params;
+    const { product_id } = req.params;
     const { size, stock } = req.body;
 
     if (!size) {
       return res.status(400).json({ error: 'La taille est obligatoire' });
     }
 
-    if (!productId || isNaN(productId)) {
+    if (!product_id || isNaN(product_id)) {
       return res.status(400).json({ error: 'ID de produit invalide' });
     }
 
     const result = await pool.query(
-      'INSERT INTO product_sizes (productId, size, stock) VALUES ($1, $2, $3) ON CONFLICT (productId, size) DO UPDATE SET stock = EXCLUDED.stock RETURNING *',
-      [parseInt(productId), size, Math.max(0, stock || 0)]
+      'INSERT INTO product_sizes (product_id, size, stock) VALUES ($1, $2, $3) ON CONFLICT (product_id, size) DO UPDATE SET stock = EXCLUDED.stock RETURNING *',
+      [parseInt(product_id), size, Math.max(0, stock || 0)]
     );
 
     res.status(201).json(result.rows[0]);
@@ -413,20 +413,20 @@ export const addProductSize = async (req, res) => {
 // Ajouter une couleur avec stock
 export const addProductColor = async (req, res) => {
   try {
-    const { productId } = req.params;
+    const { product_id } = req.params;
     const { colorName, colorHex, stock } = req.body;
 
     if (!colorName) {
       return res.status(400).json({ error: 'Le nom de la couleur est obligatoire' });
     }
 
-    if (!productId || isNaN(productId)) {
+    if (!product_id || isNaN(product_id)) {
       return res.status(400).json({ error: 'ID de produit invalide' });
     }
 
     const result = await pool.query(
-      'INSERT INTO product_colors (productId, colorName, colorHex, stock) VALUES ($1, $2, $3, $4) ON CONFLICT (productId, colorName) DO UPDATE SET stock = EXCLUDED.stock RETURNING *',
-      [parseInt(productId), colorName, colorHex || '#000000', Math.max(0, stock || 0)]
+      'INSERT INTO product_colors (product_id, colorName, colorHex, stock) VALUES ($1, $2, $3, $4) ON CONFLICT (product_id, colorName) DO UPDATE SET stock = EXCLUDED.stock RETURNING *',
+      [parseInt(product_id), colorName, colorHex || '#000000', Math.max(0, stock || 0)]
     );
 
     res.status(201).json(result.rows[0]);
@@ -439,20 +439,20 @@ export const addProductColor = async (req, res) => {
 // Mettre à jour le stock d'une taille
 export const updateSizeStock = async (req, res) => {
   try {
-    const { productId, sizeId } = req.params;
+    const { product_id, sizeId } = req.params;
     const { stock } = req.body;
 
     if (stock === undefined || isNaN(stock)) {
       return res.status(400).json({ error: 'Le stock doit être un nombre' });
     }
 
-    if (!productId || isNaN(productId) || !sizeId || isNaN(sizeId)) {
+    if (!product_id || isNaN(product_id) || !sizeId || isNaN(sizeId)) {
       return res.status(400).json({ error: 'IDs invalides' });
     }
 
     const result = await pool.query(
-      'UPDATE product_sizes SET stock = $1 WHERE id = $2 AND productId = $3 RETURNING *',
-      [Math.max(0, stock), parseInt(sizeId), parseInt(productId)]
+      'UPDATE product_sizes SET stock = $1 WHERE id = $2 AND product_id = $3 RETURNING *',
+      [Math.max(0, stock), parseInt(sizeId), parseInt(product_id)]
     );
 
     if (result.rows.length === 0) {
@@ -469,20 +469,20 @@ export const updateSizeStock = async (req, res) => {
 // Mettre à jour le stock d'une couleur
 export const updateColorStock = async (req, res) => {
   try {
-    const { productId, colorId } = req.params;
+    const { product_id, colorId } = req.params;
     const { stock } = req.body;
 
     if (stock === undefined || isNaN(stock)) {
       return res.status(400).json({ error: 'Le stock doit être un nombre' });
     }
 
-    if (!productId || isNaN(productId) || !colorId || isNaN(colorId)) {
+    if (!product_id || isNaN(product_id) || !colorId || isNaN(colorId)) {
       return res.status(400).json({ error: 'IDs invalides' });
     }
 
     const result = await pool.query(
-      'UPDATE product_colors SET stock = $1 WHERE id = $2 AND productId = $3 RETURNING *',
-      [Math.max(0, stock), parseInt(colorId), parseInt(productId)]
+      'UPDATE product_colors SET stock = $1 WHERE id = $2 AND product_id = $3 RETURNING *',
+      [Math.max(0, stock), parseInt(colorId), parseInt(product_id)]
     );
 
     if (result.rows.length === 0) {
@@ -506,14 +506,14 @@ export const getProductBySlug = async (req, res) => {
 
     const product = await pool.query(`
       SELECT p.*, 
-             c.name as categoryName, 
+              c.name as category_name, 
              g.name as groupName,
-             (SELECT json_agg(imageUrl ORDER BY "order" ASC) FROM product_images WHERE productId = p.id) as images,
-             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.productId = p.id) as sizes,
-             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.productId = p.id) as colors
+             (SELECT json_agg(image_url ORDER BY "order" ASC) FROM product_images WHERE product_id = p.id) as images,
+             (SELECT json_agg(row_to_json(ps.*)) FROM product_sizes ps WHERE ps.product_id = p.id) as sizes,
+             (SELECT json_agg(row_to_json(pc.*)) FROM product_colors pc WHERE pc.product_id = p.id) as colors
       FROM products p
-      LEFT JOIN categories c ON p.categoryId = c.id
-      LEFT JOIN kpop_groups g ON p.groupId = g.id
+      LEFT JOIN categories c ON p.category_id = c.id
+      LEFT JOIN kpop_groups g ON p.group_id = g.id
       WHERE p.slug = $1
     `, [slug]);
 
@@ -521,7 +521,7 @@ export const getProductBySlug = async (req, res) => {
       return res.status(404).json({ error: 'Produit non trouvé' });
     }
 
-    const reviews = await pool.query('SELECT * FROM reviews WHERE productId = $1 ORDER BY createdAt DESC', [product.rows[0].id]);
+    const reviews = await pool.query('SELECT * FROM reviews WHERE product_id = $1 ORDER BY created_at DESC', [product.rows[0].id]);
 
     const formattedProduct = formatProductData({
       ...product.rows[0],

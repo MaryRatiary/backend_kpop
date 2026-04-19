@@ -1,4 +1,5 @@
 import pool from '../config/database.js';
+import { formatCategoryData, formatCategoriesArray } from '../utils/dataFormatter.js';
 
 /**
  * ✅ SOLUTION UNIFIÉE: Categories uniquement avec parentId
@@ -10,14 +11,14 @@ export const getAllCategories = async (req, res) => {
   try {
     // Récupérer TOUTES les catégories (niveau 0, 1, 2, etc.)
     const result = await pool.query(`
-      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+      SELECT c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at,
         COUNT(DISTINCT p.id)::integer as productCount,
         COUNT(DISTINCT child.id)::integer as childCategoryCount
       FROM categories c
-      LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories child ON c.id = child.parentid
-      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
-      ORDER BY c.parentid ASC, c."order" ASC, c.name ASC
+      LEFT JOIN products p ON c.id = p.category_id
+      LEFT JOIN categories child ON c.id = child.parent_id
+      GROUP BY c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at
+      ORDER BY c.parent_id ASC, c."order" ASC, c.name ASC
     `);
 
     // Construire l'arborescence
@@ -25,22 +26,22 @@ export const getAllCategories = async (req, res) => {
     const categoryMap = new Map();
     const rootCategories = [];
 
-    // Pass 1: Ajouter toutes les catégories à la map
+    // Pass 1: Ajouter toutes les catégories à la map et les formater
     categories.forEach(cat => {
       categoryMap.set(cat.id, {
-        ...cat,
+        ...formatCategoryData(cat),
         children: []
       });
     });
 
     // Pass 2: Construire la hiérarchie
     categories.forEach(cat => {
-      if (cat.parentid === null) {
+      if (cat.parent_id === null) {
         // C'est une catégorie racine
         rootCategories.push(categoryMap.get(cat.id));
       } else {
         // C'est un enfant, l'ajouter au parent
-        const parent = categoryMap.get(cat.parentid);
+        const parent = categoryMap.get(cat.parent_id);
         if (parent) {
           parent.children.push(categoryMap.get(cat.id));
         }
@@ -61,16 +62,16 @@ export const getAllCategories = async (req, res) => {
 export const getAllCategoriesFlat = async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+      SELECT c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at,
         COUNT(DISTINCT p.id)::integer as productCount,
         COUNT(DISTINCT child.id)::integer as childCategoryCount
       FROM categories c
-      LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories child ON c.id = child.parentid
-      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
-      ORDER BY c.parentid ASC, c."order" ASC, c.name ASC
+      LEFT JOIN products p ON c.id = p.category_id
+      LEFT JOIN categories child ON c.id = child.parent_id
+      GROUP BY c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at
+      ORDER BY c.parent_id ASC, c."order" ASC, c.name ASC
     `);
-    res.json(result.rows);
+    res.json(formatCategoriesArray(result.rows));
   } catch (err) {
     console.error('Get categories error:', err);
     res.status(500).json({ error: 'Failed to get categories', details: err.message });
@@ -90,7 +91,7 @@ export const getCategoryWithChildren = async (req, res) => {
 
     // Récupérer la catégorie
     const category = await pool.query(`
-      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt 
+      SELECT c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at 
       FROM categories c
       WHERE c.id = $1
     `, [categoryId]);
@@ -101,14 +102,14 @@ export const getCategoryWithChildren = async (req, res) => {
 
     // Récupérer les enfants directs
     const children = await pool.query(`
-      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+      SELECT c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at,
         COUNT(DISTINCT p.id)::integer as productCount,
         COUNT(DISTINCT gc.id)::integer as childCategoryCount
       FROM categories c
-      LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories gc ON c.id = gc.parentid
-      WHERE c.parentid = $1
-      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      LEFT JOIN products p ON c.id = p.category_id
+      LEFT JOIN categories gc ON c.id = gc.parent_id
+      WHERE c.parent_id = $1
+      GROUP BY c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at
       ORDER BY c."order" ASC, c.name ASC
     `, [categoryId]);
 
@@ -118,22 +119,22 @@ export const getCategoryWithChildren = async (req, res) => {
         SELECT id FROM categories WHERE id = $1
         UNION ALL
         SELECT c.id FROM categories c
-        INNER JOIN category_tree ct ON c.parentid = ct.id
+        INNER JOIN category_tree ct ON c.parent_id = ct.id
       )
-      SELECT p.id, p.name, p.slug, p.price, p.originalPrice, p.stock, p.featured, p.categoryId,
-        (SELECT imageUrl FROM product_images WHERE productId = p.id AND isMainImage = true LIMIT 1) as image
+      SELECT p.id, p.name, p.slug, p.price, p.original_price, p.stock, p.featured, p.category_id,
+        (SELECT image_url FROM product_images WHERE product_id = p.id AND is_main_image = true LIMIT 1) as image
       FROM products p
-      WHERE p.categoryId IN (SELECT id FROM category_tree)
+      WHERE p.category_id IN (SELECT id FROM category_tree)
       ORDER BY p.name ASC
     `, [categoryId]);
 
     const totalCount = products.rows.length;
-    const directCount = products.rows.filter(p => p.categoryId === categoryId).length;
+    const directCount = products.rows.filter(p => p.category_id === categoryId).length;
     const indirectCount = totalCount - directCount;
 
     res.json({
-      ...category.rows[0],
-      children: children.rows,
+      ...formatCategoryData(category.rows[0]),
+      children: formatCategoriesArray(children.rows),
       products: products.rows,
       productCount: totalCount,
       directProductCount: directCount,
@@ -155,18 +156,18 @@ export const getChildCategories = async (req, res) => {
     }
     
     const result = await pool.query(`
-      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+      SELECT c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at,
         COUNT(DISTINCT p.id)::integer as productCount,
         COUNT(DISTINCT child.id)::integer as childCategoryCount
       FROM categories c
-      LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories child ON c.id = child.parentid
-      WHERE c.parentid = $1
-      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      LEFT JOIN products p ON c.id = p.category_id
+      LEFT JOIN categories child ON c.id = child.parent_id
+      WHERE c.parent_id = $1
+      GROUP BY c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at
       ORDER BY c."order" ASC, c.name ASC
     `, [parseInt(parentId)]);
     
-    res.json(result.rows);
+    res.json(formatCategoriesArray(result.rows));
   } catch (err) {
     console.error('Get child categories error:', err);
     res.status(500).json({ error: 'Failed to get child categories', details: err.message });
@@ -185,16 +186,16 @@ export const getSubcategoriesByCategory = async (req, res) => {
 
     // Déléguer à getChildCategories
     const result = await pool.query(`
-      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+      SELECT c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at,
         COUNT(DISTINCT p.id)::integer as productCount
       FROM categories c
-      LEFT JOIN products p ON c.id = p.categoryId
-      WHERE c.parentid = $1
-      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      LEFT JOIN products p ON c.id = p.category_id
+      WHERE c.parent_id = $1
+      GROUP BY c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at
       ORDER BY c.name ASC
     `, [parseInt(categoryId)]);
     
-    res.json(result.rows);
+    res.json(formatCategoriesArray(result.rows));
   } catch (err) {
     console.error('Get subcategories error:', err);
     res.status(500).json({ error: 'Failed to get subcategories', details: err.message });
@@ -225,11 +226,11 @@ export const createCategory = async (req, res) => {
     }
 
     const result = await pool.query(
-      'INSERT INTO categories (name, description, image, slug, parentId, level) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      'INSERT INTO categories (name, description, image, slug, parent_id, level) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
       [name, description || null, image || null, slug, parentId ? parseInt(parentId) : null, level]
     );
 
-    res.status(201).json(result.rows[0]);
+    res.status(201).json(formatCategoryData(result.rows[0]));
   } catch (err) {
     console.error('Create category error:', err);
     res.status(500).json({ error: 'Erreur lors de la création de la catégorie', details: err.message });
@@ -273,7 +274,7 @@ export const updateCategory = async (req, res) => {
       return res.status(400).json({ error: 'Aucun champ à mettre à jour' });
     }
 
-    updates.push(`updatedAt = CURRENT_TIMESTAMP`);
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
     params.push(parseInt(id));
 
     const query = `UPDATE categories SET ${updates.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
@@ -283,7 +284,7 @@ export const updateCategory = async (req, res) => {
       return res.status(404).json({ error: 'Catégorie non trouvée' });
     }
 
-    res.json(result.rows[0]);
+    res.json(formatCategoryData(result.rows[0]));
   } catch (err) {
     console.error('Update category error:', err);
     res.status(500).json({ error: 'Erreur lors de la mise à jour', details: err.message });
@@ -318,9 +319,9 @@ export const deleteCategory = async (req, res) => {
         SELECT id FROM categories WHERE id = $1
         UNION ALL
         SELECT c.id FROM categories c
-        INNER JOIN category_tree ct ON c.parentid = ct.id
+        INNER JOIN category_tree ct ON c.parent_id = ct.id
       )
-      SELECT DISTINCT id FROM products WHERE categoryId IN (SELECT id FROM category_tree)
+      SELECT DISTINCT id FROM products WHERE category_id IN (SELECT id FROM category_tree)
     `, [categoryId]);
 
     const productIds = allProductIds.rows.map(r => r.id);
@@ -328,21 +329,21 @@ export const deleteCategory = async (req, res) => {
 
     // 2️⃣ Supprimer les données liées aux produits
     if (productIds.length > 0) {
-      await client.query('DELETE FROM reviews WHERE productId = ANY($1)', [productIds]);
-      await client.query('DELETE FROM product_images WHERE productId = ANY($1)', [productIds]);
-      await client.query('DELETE FROM product_colors WHERE productId = ANY($1)', [productIds]);
-      await client.query('DELETE FROM product_sizes WHERE productId = ANY($1)', [productIds]);
-      await client.query('DELETE FROM order_items WHERE productId = ANY($1)', [productIds]);
+      await client.query('DELETE FROM reviews WHERE product_id = ANY($1)', [productIds]);
+      await client.query('DELETE FROM product_images WHERE product_id = ANY($1)', [productIds]);
+      await client.query('DELETE FROM product_colors WHERE product_id = ANY($1)', [productIds]);
+      await client.query('DELETE FROM product_sizes WHERE product_id = ANY($1)', [productIds]);
+      await client.query('DELETE FROM order_items WHERE product_id = ANY($1)', [productIds]);
       await client.query('DELETE FROM products WHERE id = ANY($1)', [productIds]);
     }
 
     // 3️⃣ Supprimer les catégories enfants (récursivement)
     await client.query(`
       WITH RECURSIVE category_tree AS (
-        SELECT id FROM categories WHERE parentid = $1
+        SELECT id FROM categories WHERE parent_id = $1
         UNION ALL
         SELECT c.id FROM categories c
-        INNER JOIN category_tree ct ON c.parentid = ct.id
+        INNER JOIN category_tree ct ON c.parent_id = ct.id
       )
       DELETE FROM categories WHERE id IN (SELECT id FROM category_tree)
     `, [categoryId]);
@@ -390,13 +391,13 @@ export const reorderCategory = async (req, res) => {
     const source = sourceCategory.rows[0];
     const target = targetCategory.rows[0];
 
-    if (source.parentid !== target.parentid) {
+    if (source.parent_id !== target.parent_id) {
       return res.status(400).json({ error: 'Les catégories doivent être au même niveau' });
     }
 
     const siblingCategories = await pool.query(
-      'SELECT id, "order" FROM categories WHERE parentId IS NOT DISTINCT FROM $1 ORDER BY "order" ASC, id ASC',
-      [source.parentid]
+      'SELECT id, "order" FROM categories WHERE parent_id IS NOT DISTINCT FROM $1 ORDER BY "order" ASC, id ASC',
+      [source.parent_id]
     );
 
     const siblings = siblingCategories.rows;
@@ -418,12 +419,13 @@ export const reorderCategory = async (req, res) => {
     }
 
     const updatedCategory = await pool.query('SELECT * FROM categories WHERE id = $1', [parseInt(id)]);
-    res.json(updatedCategory.rows[0]);
+    res.json(formatCategoryData(updatedCategory.rows[0]));
   } catch (err) {
     console.error('Reorder category error:', err);
     res.status(500).json({ error: 'Erreur lors du réordonnancement', details: err.message });
   }
 };
+
 // Obtenir une catégorie par slug avec tous ses enfants et produits
 export const getCategoryBySlug = async (req, res) => {
   try {
@@ -435,7 +437,7 @@ export const getCategoryBySlug = async (req, res) => {
 
     // Récupérer la catégorie par slug
     const category = await pool.query(`
-      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt 
+      SELECT c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at 
       FROM categories c
       WHERE c.slug = $1
     `, [slug]);
@@ -448,14 +450,14 @@ export const getCategoryBySlug = async (req, res) => {
 
     // Récupérer les enfants directs
     const children = await pool.query(`
-      SELECT c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt,
+      SELECT c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at,
         COUNT(DISTINCT p.id)::integer as productCount,
         COUNT(DISTINCT gc.id)::integer as childCategoryCount
       FROM categories c
-      LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN categories gc ON c.id = gc.parentid
-      WHERE c.parentid = $1
-      GROUP BY c.id, c.name, c.slug, c.description, c.parentid, c.level, c."order", c.image, c.createdAt, c.updatedAt
+      LEFT JOIN products p ON c.id = p.category_id
+      LEFT JOIN categories gc ON c.id = gc.parent_id
+      WHERE c.parent_id = $1
+      GROUP BY c.id, c.name, c.slug, c.description, c.parent_id, c.level, c."order", c.image, c.created_at, c.updated_at
       ORDER BY c."order" ASC, c.name ASC
     `, [categoryId]);
 
@@ -465,22 +467,22 @@ export const getCategoryBySlug = async (req, res) => {
         SELECT id FROM categories WHERE id = $1
         UNION ALL
         SELECT c.id FROM categories c
-        INNER JOIN category_tree ct ON c.parentid = ct.id
+        INNER JOIN category_tree ct ON c.parent_id = ct.id
       )
-      SELECT p.id, p.name, p.slug, p.price, p.originalPrice, p.stock, p.featured, p.categoryId,
-        (SELECT imageUrl FROM product_images WHERE productId = p.id AND isMainImage = true LIMIT 1) as image
+      SELECT p.id, p.name, p.slug, p.price, p.original_price, p.stock, p.featured, p.category_id,
+        (SELECT image_url FROM product_images WHERE product_id = p.id AND is_main_image = true LIMIT 1) as image
       FROM products p
-      WHERE p.categoryId IN (SELECT id FROM category_tree)
+      WHERE p.category_id IN (SELECT id FROM category_tree)
       ORDER BY p.name ASC
     `, [categoryId]);
 
     const totalCount = products.rows.length;
-    const directCount = products.rows.filter(p => p.categoryId === categoryId).length;
+    const directCount = products.rows.filter(p => p.category_id === categoryId).length;
     const indirectCount = totalCount - directCount;
 
     res.json({
-      ...category.rows[0],
-      children: children.rows,
+      ...formatCategoryData(category.rows[0]),
+      children: formatCategoriesArray(children.rows),
       products: products.rows,
       productCount: totalCount,
       directProductCount: directCount,

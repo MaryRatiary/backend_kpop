@@ -20,7 +20,7 @@ const runMigrations = async () => {
         executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    console.log('✅ Table schema_migrations vérifiée');
+    console.log('✅ Table schema_zmigrations vérifiée');
 
     // Récupérer les migrations déjà exécutées
     const result = await pool.query('SELECT name FROM schema_migrations');

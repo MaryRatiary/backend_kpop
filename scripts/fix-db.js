@@ -8,17 +8,40 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import pg from 'pg';
+import dotenv from 'dotenv';
 
-const { Client } = pg;
+// Charger le fichier .env avant tout
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '../.env') });
+
+const { Client } = pg;
 
 async function runMigrations() {
   console.log('\n🔧 Exécution des migrations...\n');
   
-  const client = new Client({
-    connectionString: process.env.DATABASE_URL || process.env.DATABASE_URL
-  });
+  // Construire la connexion correctement
+  let connectionConfig;
+  
+  if (process.env.DATABASE_URL) {
+    connectionConfig = {
+      connectionString: process.env.DATABASE_URL
+    };
+    console.log('🔗 Utilisation de DATABASE_URL (Render/Production)');
+  } else {
+    connectionConfig = {
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || 'postgres',
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT) || 5432,
+      database: process.env.DB_NAME || 'sinoa_kpop'
+    };
+    console.log('🔗 Utilisation des variables DB_* locales');
+    console.log(`   Host: ${connectionConfig.host}:${connectionConfig.port}`);
+    console.log(`   Database: ${connectionConfig.database}`);
+  }
+
+  const client = new Client(connectionConfig);
 
   try {
     await client.connect();

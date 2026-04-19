@@ -7,13 +7,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 /**
- * Exécute la migration 050 pour reconstruire la BD proprement
+ * Exécute les migrations SEULEMENT si elles n'ont pas déjà été exécutées
  */
 async function runMigrations() {
   try {
     console.log('🔄 Vérification des migrations...');
 
-    // Vérifier si schema_migrations existe
+    // 1️⃣ Créer la table schema_migrations si elle n'existe pas
     const tableExistsResult = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
@@ -36,7 +36,20 @@ async function runMigrations() {
       console.log('✅ Table schema_migrations existe déjà');
     }
 
-    // Essayer d'exécuter la migration 050
+    // 2️⃣ VÉRIFIER SI LA MIGRATION 050 A DÉJÀ ÉTÉ EXÉCUTÉE
+    const migrationName = '050_complete_stable_rebuild';
+    const migrationCheckResult = await pool.query(
+      'SELECT * FROM schema_migrations WHERE name = $1',
+      [migrationName]
+    );
+
+    if (migrationCheckResult.rows.length > 0) {
+      console.log(`⏭️  Migration '${migrationName}' déjà exécutée`);
+      console.log('✨ Base de données préservée!\n');
+      return true;  // ✅ NE PAS EXÉCUTER LA MIGRATION!
+    }
+
+    // 3️⃣ EXÉCUTER LA MIGRATION SEULEMENT SI ELLE N'A PAS ÉTÉ EXÉCUTÉE
     const migrationsDir = path.join(__dirname, '../../migrations');
     
     if (!fs.existsSync(migrationsDir)) {
@@ -50,23 +63,18 @@ async function runMigrations() {
       try {
         console.log('⏳ Exécution de la migration 050_complete_stable_rebuild.sql...');
         const migrationSQL = fs.readFileSync(migration050Path, 'utf-8');
+        
+        // ✅ Exécuter la migration
         await pool.query(migrationSQL);
+        
         console.log('✅ Migration 050 exécutée avec succès!\n');
         return true;
       } catch (error) {
-        // Si la migration a déjà été exécutée, continuer
-        if (error.message.includes('already exists') || 
-            error.message.includes('duplicate') ||
-            error.message.includes('violates') ||
-            error.code === '42P07') {
-          console.log('⏭️  Migration 050 déjà exécutée ou BD déjà stable\n');
-          return true;
-        } else {
-          console.error('❌ Erreur migration 050:', error.message);
-          console.error('   Code:', error.code);
-          // Continuer quand même
-          return true;
-        }
+        console.error('❌ Erreur migration 050:', error.message);
+        console.error('   Code:', error.code);
+        
+        // Si elle échoue, continuer quand même (ne pas crash le serveur)
+        return true;
       }
     } else {
       console.log('⏭️  Migration 050 non trouvée');

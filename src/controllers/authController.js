@@ -14,7 +14,7 @@ const isValidEmail = (email) => {
 // Inscription
 export const register = async (req, res) => {
   try {
-    const { email, password, firstName, lastName } = req.body;
+    const { email, password, first_name, last_name } = req.body;
 
     // Validation
     if (!email || !password) {
@@ -40,8 +40,8 @@ export const register = async (req, res) => {
 
     // Créer l'utilisateur
     const result = await pool.query(
-      'INSERT INTO users (email, password, firstName, lastName, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, firstName, lastName, role',
-      [email.toLowerCase(), hashedPassword, firstName || '', lastName || '', 'customer']
+      'INSERT INTO users (email, password, first_name, last_name, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, first_name, last_name, role',
+      [email.toLowerCase(), hashedPassword, first_name || '', last_name || '', 'customer']
     );
 
     const user = result.rows[0];
@@ -102,8 +102,8 @@ export const login = async (req, res) => {
       user: {
         id: user.id,
         email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
+        first_name: user.first_name,
+        last_name: user.last_name,
         role: user.role
       },
       token
@@ -122,7 +122,7 @@ export const getProfile = async (req, res) => {
     }
 
     const result = await pool.query(
-      'SELECT id, email, firstName, lastName, phone, address, city, postalCode, country, role FROM users WHERE id = $1',
+      'SELECT id, email, first_name, last_name, phone, address, city, postal_code, country, role FROM users WHERE id = $1',
       [req.user.id]
     );
 
@@ -144,20 +144,20 @@ export const updateProfile = async (req, res) => {
       return res.status(401).json({ error: 'Authentification requise' });
     }
 
-    const { firstName, lastName, phone, address, city, postalCode, country } = req.body;
+    const { first_name, last_name, phone, address, city, postal_code, country } = req.body;
 
     // Validation optionnelle
     if (phone && !/^[\d\s\-\+\(\)]+$/.test(phone)) {
       return res.status(400).json({ error: 'Numéro de téléphone invalide' });
     }
 
-    if (postalCode && !/^[\d\s\-]+$/.test(postalCode)) {
+    if (postal_code && !/^[\d\s\-]+$/.test(postal_code)) {
       return res.status(400).json({ error: 'Code postal invalide' });
     }
 
     const result = await pool.query(
-      'UPDATE users SET firstName = $1, lastName = $2, phone = $3, address = $4, city = $5, postalCode = $6, country = $7, updatedAt = CURRENT_TIMESTAMP WHERE id = $8 RETURNING id, email, firstName, lastName, phone, address, city, postalCode, country',
-      [firstName || null, lastName || null, phone || null, address || null, city || null, postalCode || null, country || null, req.user.id]
+      'UPDATE users SET first_name = $1, last_name = $2, phone = $3, address = $4, city = $5, postal_code = $6, country = $7, updatedAt = CURRENT_TIMESTAMP WHERE id = $8 RETURNING id, email, first_name, last_name, phone, address, city, postal_code, country',
+      [first_name || null, last_name || null, phone || null, address || null, city || null, postal_code || null, country || null, req.user.id]
     );
 
     if (result.rows.length === 0) {
