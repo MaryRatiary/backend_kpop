@@ -19,7 +19,7 @@ COPY migrations ./migrations
 COPY scripts ./scripts
 
 # Copier le fichier CSV
-COPY produits_huntrix.csv ./
+# COPY produits_huntrix.csv ./
 
 # Port d'exposition
 EXPOSE 10000
@@ -29,4 +29,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:10000/', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
 # Script d'entrée : FIX DB → IMPORT HUNTRIX → START
-ENTRYPOINT ["sh", "-c", "npm run fix-db && npm run import:huntrix && npm start"]
+ENTRYPOINT ["sh", "-c", "npm start"]

@@ -2,11 +2,6 @@ import axios from 'axios';
 import pool from '../config/database.js';
 import shopifyClient from './shopifyClient.js';
 
-/**
- * Service pour envoyer les commandes du site vers Shopify
- * Les commandes créées sur votre site sont automatiquement
- * envoyées à Shopify pour une gestion centralisée
- */
 class ShopifyOrdersService {
   constructor() {
     this.shopUrl = process.env.SHOPIFY_SHOP_URL;
@@ -14,11 +9,6 @@ class ShopifyOrdersService {
     this.apiVersion = '2024-01';
   }
 
-  /**
-   * Envoyer une commande locale vers Shopify
-   * @param {Object} orderData - Les données de la commande depuis votre site
-   * @returns {Object} La commande créée dans Shopify avec son ID
-   */
   async sendOrderToShopify(orderData) {
     try {
       console.log(`📤 Envoi de la commande #${orderData.id} vers Shopify...`);
@@ -29,12 +19,12 @@ class ShopifyOrdersService {
         [orderData.id]
       );
 
-      if (existing.rows.length > 0) {
+      if (existing.rows.length > 0 && existing.rows[0].shopify_order_id) {
         console.log(`⚠️  Commande #${orderData.id} déjà synchronisée avec Shopify`);
         return { alreadySynced: true, shopifyOrderId: existing.rows[0].shopify_order_id };
       }
 
-      // Récupérer les articles de la commande avec les bons noms de colonnes
+      // Récupérer les articles de la commande
       const itemsResult = await pool.query(
         `SELECT oi.*, p.name, p.id as product_id
          FROM order_items oi
@@ -51,7 +41,7 @@ class ShopifyOrdersService {
         variant_id: item.variant_id || null,
       }));
 
-      // Construire la commande pour Shopify avec les bons noms de champs
+      // Construire la commande pour Shopify
       const shopifyOrderData = {
         email: orderData.email || 'client@sinoa-kpop.com',
         financial_status: 'pending',
@@ -101,7 +91,7 @@ class ShopifyOrdersService {
       const shopifyOrder = response.data.order;
       console.log(`✅ Commande créée dans Shopify avec l'ID: ${shopifyOrder.id}`);
 
-      // Enregistrer la synchronisation en base de données
+      // Enregistrer la synchronisation
       await this.trackSyncedOrder(orderData.id, shopifyOrder.id);
 
       return {
@@ -119,19 +109,15 @@ class ShopifyOrdersService {
     }
   }
 
-  /**
-   * Enregistrer qu'une commande a été synchronisée avec Shopify
-   */
   async trackSyncedOrder(localOrderId, shopifyOrderId) {
     try {
       await pool.query(
-        `INSERT INTO orders_to_shopify_sync 
-         (local_order_id, shopify_order_id, sync_status, synced_at)
+        `INSERT INTO orders_to_shopify_sync (local_order_id, shopify_order_id, sync_status, synced_at)
          VALUES ($1, $2, 'completed', NOW())
          ON CONFLICT (local_order_id) DO UPDATE SET
-         shopify_order_id = $2,
-         sync_status = 'completed',
-         synced_at = NOW()`,
+           shopify_order_id = $2,
+           sync_status = 'completed',
+           synced_at = NOW()`,
         [localOrderId, shopifyOrderId]
       );
       console.log(`📍 Synchronisation enregistrée: commande locale #${localOrderId} → Shopify #${shopifyOrderId}`);
@@ -140,29 +126,35 @@ class ShopifyOrdersService {
     }
   }
 
-  /**
-   * Enregistrer une erreur de synchronisation
-   */
   async trackSyncError(localOrderId, errorMessage) {
     try {
-      await pool.query(
-        `INSERT INTO orders_to_shopify_sync 
-         (local_order_id, sync_status, error_message, synced_at)
-         VALUES ($1, 'failed', $2, NOW())
-         ON CONFLICT (local_order_id) DO UPDATE SET
-         sync_status = 'failed',
-         error_message = $2,
-         synced_at = NOW()`,
-        [localOrderId, errorMessage]
+      // Vérifier si l'entrée existe déjà
+      const existing = await pool.query(
+        'SELECT id FROM orders_to_shopify_sync WHERE local_order_id = $1',
+        [localOrderId]
       );
+
+      if (existing.rows.length > 0) {
+        // Mettre à jour l'erreur si l'entrée existe
+        await pool.query(
+          `UPDATE orders_to_shopify_sync 
+           SET sync_status = 'failed', error_message = $1, updated_at = NOW()
+           WHERE local_order_id = $2`,
+          [errorMessage, localOrderId]
+        );
+      } else {
+        // Créer une nouvelle entrée si elle n'existe pas
+        await pool.query(
+          `INSERT INTO orders_to_shopify_sync (local_order_id, sync_status, error_message)
+           VALUES ($1, 'failed', $2)`,
+          [localOrderId, errorMessage]
+        );
+      }
     } catch (error) {
       console.error('❌ Erreur lors de l\'enregistrement de l\'erreur:', error.message);
     }
   }
 
-  /**
-   * Récupérer le statut de synchronisation d'une commande
-   */
   async getSyncStatus(localOrderId) {
     try {
       const result = await pool.query(
@@ -176,9 +168,6 @@ class ShopifyOrdersService {
     }
   }
 
-  /**
-   * Resynchroniser les commandes qui ont échoué
-   */
   async retrySyncedOrders() {
     try {
       console.log('🔄 Tentative de resynchronisation des commandes échouées...');
@@ -212,9 +201,6 @@ class ShopifyOrdersService {
     }
   }
 
-  /**
-   * Obtenir les statistiques de synchronisation
-   */
   async getSyncStats() {
     try {
       const result = await pool.query(
