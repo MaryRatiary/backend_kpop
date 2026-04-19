@@ -2,11 +2,17 @@
 /**
  * Script de fix automatique du schéma de base de données
  * À exécuter avant le démarrage du serveur
+ * ES6 Module version
  */
 
-const fs = require('fs');
-const path = require('path');
-const { Client } = require('pg');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import pg from 'pg';
+
+const { Client } = pg;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 async function fixDatabaseSchema() {
   console.log('🔧 Démarrage du fix de schéma...');
@@ -21,7 +27,7 @@ async function fixDatabaseSchema() {
 
     // Lire le script SQL de fix
     const fixScript = fs.readFileSync(
-      path.join(__dirname, '../fix-db-schema.sql'),
+      path.join(__dirname, '../migrations/fix-db-schema.sql'),
       'utf8'
     );
 
@@ -31,7 +37,7 @@ async function fixDatabaseSchema() {
 
     // Vérifier les colonnes critiques
     const schemaCheck = await client.query(`
-      SELECT column_name 
+      SELECT table_name, column_name 
       FROM information_schema.columns 
       WHERE table_name IN ('schema_migrations', 'orders')
       ORDER BY table_name, column_name;
@@ -39,9 +45,10 @@ async function fixDatabaseSchema() {
 
     console.log('\n📋 Colonnes actuelles:');
     schemaCheck.rows.forEach(row => {
-      console.log(`   - ${row.column_name}`);
+      console.log(`   - ${row.table_name}.${row.column_name}`);
     });
 
+    console.log('✨ Schema fix complété!');
     return true;
 
   } catch (error) {
@@ -54,7 +61,8 @@ async function fixDatabaseSchema() {
 }
 
 // Exécuter si appelé directement
-if (require.main === module) {
+const isMainModule = import.meta.url === `file://${process.argv[1]}`;
+if (isMainModule) {
   fixDatabaseSchema()
     .then(success => {
       process.exit(success ? 0 : 1);
@@ -65,4 +73,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = fixDatabaseSchema;
+export default fixDatabaseSchema;
