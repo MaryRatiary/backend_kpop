@@ -18,6 +18,9 @@ COPY src ./src
 COPY migrations ./migrations
 COPY scripts ./scripts
 
+# Copier le fichier CSV
+COPY produits_huntrix.csv ./
+
 # Port d'exposition
 EXPOSE 10000
 
