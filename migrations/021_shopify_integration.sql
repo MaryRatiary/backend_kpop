@@ -69,8 +69,8 @@ CREATE INDEX IF NOT EXISTS idx_shopify_order_items_order ON shopify_order_items(
 CREATE INDEX IF NOT EXISTS idx_shopify_products_mapping ON shopify_products(product_id, shopify_id);
 
 -- Insertion de la migration dans schema_migrations
-INSERT INTO schema_migrations (migration, version, name, executed_at) 
-VALUES ('021_shopify_integration', '021', '021_shopify_integration', CURRENT_TIMESTAMP)
-ON CONFLICT (version) DO NOTHING;
+INSERT INTO schema_migrations (name, applied_at) 
+VALUES ('021_shopify_integration', CURRENT_TIMESTAMP)
+ON CONFLICT DO NOTHING;
 
 COMMIT;
