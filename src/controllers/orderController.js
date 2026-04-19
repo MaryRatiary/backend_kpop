@@ -138,8 +138,16 @@ export const createOrder = async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Create order error:', err);
-    res.status(500).json({ error: 'Erreur lors de la création de la commande' });
+    console.error('❌ Create order error:', err);
+    console.error('Error message:', err.message);
+    console.error('Error code:', err.code);
+    console.error('Error detail:', err.detail);
+    res.status(500).json({ 
+      error: 'Erreur lors de la création de la commande',
+      message: err.message,
+      code: err.code,
+      detail: err.detail
+    });
   }
 };
 
