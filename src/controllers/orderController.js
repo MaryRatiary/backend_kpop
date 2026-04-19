@@ -57,7 +57,7 @@ export const createOrder = async (req, res) => {
       itemsData.push({ ...item, price, productId: parseInt(item.productId) });
     }
 
-    // 🔧 CORRECTION: Utiliser snake_case pour les noms de colonnes (pas de guillemets)
+    // Utiliser snake_case pour les noms de colonnes
     const order = await pool.query(
       `INSERT INTO orders (
         user_id, 
@@ -99,10 +99,10 @@ export const createOrder = async (req, res) => {
 
     const orderId = order.rows[0].id;
 
-    // Ajouter les articles de la commande
+    // Ajouter les articles de la commande - CORRECTION: order_id, product_id
     for (const item of itemsData) {
       await pool.query(
-        `INSERT INTO order_items (orderId, productId, quantity, price, size, color)
+        `INSERT INTO order_items (order_id, product_id, quantity, price, size, color)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [orderId, item.productId, item.quantity, item.price, item.size || null, item.color || null]
       );
@@ -114,7 +114,7 @@ export const createOrder = async (req, res) => {
       );
     }
 
-    // 🔄 Envoyer la commande à Shopify en arrière-plan (asynchrone)
+    // Envoyer la commande à Shopify en arrière-plan (asynchrone)
     const orderWithDetails = {
       id: orderId,
       ...order.rows[0]
@@ -192,12 +192,13 @@ export const getOrderById = async (req, res) => {
       return res.status(404).json({ error: 'Commande non trouvée' });
     }
 
+    // CORRECTION: Utiliser snake_case pour order_id, product_id, image_url, is_main_image
     const items = await pool.query(
-      `SELECT oi.*, p.name, p.slug, p.price, pi.imageUrl
+      `SELECT oi.*, p.name, p.slug, p.price, pi.image_url
        FROM order_items oi
-       JOIN products p ON oi.productId = p.id
-       LEFT JOIN product_images pi ON p.id = pi.productId AND pi.isMainImage = true
-       WHERE oi.orderId = $1
+       JOIN products p ON oi.product_id = p.id
+       LEFT JOIN product_images pi ON p.id = pi.product_id AND pi.is_main_image = true
+       WHERE oi.order_id = $1
        ORDER BY oi.id`,
       [parseInt(orderId)]
     );
@@ -237,12 +238,13 @@ export const getOrderByIdAdmin = async (req, res) => {
       return res.status(404).json({ error: 'Commande non trouvée' });
     }
 
+    // CORRECTION: Utiliser snake_case
     const items = await pool.query(
-      `SELECT oi.*, p.name, p.slug, p.price, pi.imageUrl
+      `SELECT oi.*, p.name, p.slug, p.price, pi.image_url
        FROM order_items oi
-       JOIN products p ON oi.productId = p.id
-       LEFT JOIN product_images pi ON p.id = pi.productId AND pi.isMainImage = true
-       WHERE oi.orderId = $1
+       JOIN products p ON oi.product_id = p.id
+       LEFT JOIN product_images pi ON p.id = pi.product_id AND pi.is_main_image = true
+       WHERE oi.order_id = $1
        ORDER BY oi.id`,
       [parseInt(orderId)]
     );
@@ -292,12 +294,12 @@ export const cancelOrder = async (req, res) => {
       return res.status(400).json({ error: 'Seules les commandes en attente peuvent être annulées' });
     }
 
-    // Restaurer le stock
-    const items = await pool.query('SELECT * FROM order_items WHERE orderId = $1', [parseInt(orderId)]);
+    // Restaurer le stock - CORRECTION: order_id
+    const items = await pool.query('SELECT * FROM order_items WHERE order_id = $1', [parseInt(orderId)]);
     for (const item of items.rows) {
       await pool.query(
         'UPDATE products SET stock = stock + $1 WHERE id = $2',
-        [item.quantity, item.productId]
+        [item.quantity, item.product_id]
       );
     }
 
@@ -359,7 +361,7 @@ export const updateOrderStatus = async (req, res) => {
   }
 };
 
-// 🆕 NOUVEAU: Réessayer la synchronisation Shopify pour une commande
+// Réessayer la synchronisation Shopify pour une commande
 export const retrySyncWithShopify = async (req, res) => {
   try {
     if (!req.user || !req.user.id) {
