@@ -17,6 +17,7 @@ RUN npm ci --only=production && \
 COPY src ./src
 COPY migrations ./migrations
 COPY scripts ./scripts
+COPY add-colors-to-products.js ./
 
 # Port d'exposition
 EXPOSE 5000
@@ -26,4 +27,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:5000/api/health', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
 
 # Script d'entrée : FIX DB → MIGRATIONS → COULEURS → START
-ENTRYPOINT ["sh", "-c", "npm run scripts/fix-db && node scripts/init-db.js && node add-colors-to-products.js && npm start"]
+ENTRYPOINT ["sh", "-c", "node scripts/fix-db.js && node scripts/init-db.js && node add-colors-to-products.js && npm start"]
