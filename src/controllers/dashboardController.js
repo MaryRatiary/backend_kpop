@@ -3,12 +3,10 @@ import pool from '../config/database.js';
 // Dashboard Admin - Statistiques globales
 export const getAdminDashboard = async (req, res) => {
   try {
-    // Le middleware authorizeAdmin vérifie déjà que c'est un admin
-    // Total des ventes
+    // Total des ventes (toutes les commandes, pas seulement les complétées)
     const totalSales = await pool.query(`
       SELECT COUNT(*) as orderCount, SUM(total_price) as totalRevenue
       FROM orders
-      WHERE status = 'completed'
     `);
 
     // Produits les plus vendus
@@ -32,9 +30,9 @@ export const getAdminDashboard = async (req, res) => {
       LIMIT 5
     `);
 
-    // Commandes récentes
+    // Commandes récentes (TOUTES les commandes, pas seulement les complétées)
     const recentOrders = await pool.query(`
-      SELECT o.id, o.user_id, u.email, o.total_price, o.status, o.created_at
+      SELECT o.id, o.user_id, u.email, o.total_price, o.status, o.payment_status, o.created_at
       FROM orders o
       JOIN users u ON o.user_id = u.id
       ORDER BY o.created_at DESC
@@ -50,6 +48,13 @@ export const getAdminDashboard = async (req, res) => {
       LIMIT 10
     `);
 
+    // Statistiques par statut
+    const ordersByStatus = await pool.query(`
+      SELECT status, COUNT(*) as count
+      FROM orders
+      GROUP BY status
+    `);
+
     res.json({
       dashboard: {
         totalOrders: totalSales.rows[0]?.orderCount || 0,
@@ -57,7 +62,8 @@ export const getAdminDashboard = async (req, res) => {
         topProducts: topProducts.rows,
         topCategories: topCategories.rows,
         recentOrders: recentOrders.rows,
-        lowStock: lowStock.rows
+        lowStock: lowStock.rows,
+        ordersByStatus: ordersByStatus.rows
       }
     });
   } catch (err) {

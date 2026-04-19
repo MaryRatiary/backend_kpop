@@ -34,12 +34,12 @@ class ShopifyOrdersService {
         return { alreadySynced: true, shopifyOrderId: existing.rows[0].shopify_order_id };
       }
 
-      // Récupérer les articles de la commande
+      // Récupérer les articles de la commande avec les bons noms de colonnes
       const itemsResult = await pool.query(
         `SELECT oi.*, p.name, p.sku 
          FROM order_items oi
-         JOIN products p ON oi.productId = p.id
-         WHERE oi.orderId = $1`,
+         JOIN products p ON oi.product_id = p.id
+         WHERE oi.order_id = $1`,
         [orderData.id]
       );
 
@@ -47,11 +47,11 @@ class ShopifyOrdersService {
         title: item.name,
         quantity: item.quantity,
         price: item.price.toString(),
-        sku: item.sku || `SINOA-${item.productId}`,
+        sku: item.sku || `SINOA-${item.product_id}`,
         variant_id: item.variant_id || null,
       }));
 
-      // Construire la commande pour Shopify
+      // Construire la commande pour Shopify avec les bons noms de champs
       const shopifyOrderData = {
         email: orderData.email || 'client@sinoa-kpop.com',
         financial_status: 'pending',
@@ -59,27 +59,27 @@ class ShopifyOrdersService {
         line_items: lineItems,
         customer: {
           email: orderData.email,
-          first_name: orderData.firstName || 'Client',
-          last_name: orderData.lastName || 'Sinoa',
+          first_name: orderData.first_name || 'Client',
+          last_name: orderData.last_name || 'Sinoa',
         },
         shipping_address: {
-          first_name: orderData.firstName || 'Client',
-          last_name: orderData.lastName || 'Sinoa',
-          address1: orderData.shippingAddress || 'Non spécifiée',
+          first_name: orderData.first_name || 'Client',
+          last_name: orderData.last_name || 'Sinoa',
+          address1: orderData.shipping_address || 'Non spécifiée',
           city: orderData.city || '',
           province_code: '',
           country_code: orderData.country || 'MG',
-          zip: orderData.postalCode || '',
+          zip: orderData.postal_code || '',
           phone: orderData.phone || '',
         },
         billing_address: {
-          first_name: orderData.firstName || 'Client',
-          last_name: orderData.lastName || 'Sinoa',
-          address1: orderData.shippingAddress || 'Non spécifiée',
+          first_name: orderData.first_name || 'Client',
+          last_name: orderData.last_name || 'Sinoa',
+          address1: orderData.shipping_address || 'Non spécifiée',
           city: orderData.city || '',
           province_code: '',
           country_code: orderData.country || 'MG',
-          zip: orderData.postalCode || '',
+          zip: orderData.postal_code || '',
           phone: orderData.phone || '',
         },
         tags: 'sinoa_kpop_website',
@@ -187,7 +187,7 @@ class ShopifyOrdersService {
         `SELECT o.* FROM orders o
          JOIN orders_to_shopify_sync ots ON o.id = ots.local_order_id
          WHERE ots.sync_status = 'failed'
-         ORDER BY o.createdAt ASC
+         ORDER BY o.created_at ASC
          LIMIT 10`
       );
 
