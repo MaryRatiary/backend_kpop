@@ -8,8 +8,8 @@ const createAdminUser = async () => {
   try {
     const email = 'maryratiary12@gmail.com';
     const password = 'qwertyuiop123';
-    const firstName = 'Admin';
-    const lastName = 'User';
+    const first_name = 'Admin';
+    const last_name = 'User';
 
     // Vérifier si l'utilisateur existe
     const userExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
@@ -25,14 +25,14 @@ const createAdminUser = async () => {
 
     // Créer l'utilisateur admin
     const result = await pool.query(
-      'INSERT INTO users (email, password, firstName, lastName, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, firstName, lastName, role',
-      [email, hashedPassword, firstName, lastName, 'admin']
+      'INSERT INTO users (email, password, first_name, last_name, role) VALUES ($1, $2, $3, $4, $5) RETURNING id, email, first_name, last_name, role',
+      [email, hashedPassword, first_name, last_name, 'admin']
     );
 
     const user = result.rows[0];
     console.log('✅ Utilisateur admin créé avec succès !');
     console.log('📧 Email:', user.email);
-    console.log('👤 Nom:', user.firstName, user.lastName);
+    console.log('👤 Nom:', user.first_name, user.last_name);
     console.log('🔑 Rôle:', user.role);
     console.log('🆔 ID:', user.id);
     

@@ -6,7 +6,7 @@ export const getAdminDashboard = async (req, res) => {
     // Le middleware authorizeAdmin vérifie déjà que c'est un admin
     // Total des ventes
     const totalSales = await pool.query(`
-      SELECT COUNT(*) as orderCount, SUM(totalPrice) as totalRevenue
+      SELECT COUNT(*) as orderCount, SUM(total_price) as totalRevenue
       FROM orders
       WHERE status = 'completed'
     `);
@@ -15,7 +15,7 @@ export const getAdminDashboard = async (req, res) => {
     const topProducts = await pool.query(`
       SELECT p.id, p.name, p.price, COUNT(oi.id) as salesCount, SUM(oi.quantity) as totalQuantity
       FROM products p
-      LEFT JOIN order_items oi ON p.id = oi.productId
+      LEFT JOIN order_items oi ON p.id = oi.product_id
       GROUP BY p.id, p.name, p.price
       ORDER BY salesCount DESC
       LIMIT 10
@@ -25,8 +25,8 @@ export const getAdminDashboard = async (req, res) => {
     const topCategories = await pool.query(`
       SELECT c.id, c.name, COUNT(DISTINCT p.id) as productCount, COUNT(DISTINCT oi.id) as salesCount
       FROM categories c
-      LEFT JOIN products p ON c.id = p.categoryId
-      LEFT JOIN order_items oi ON p.id = oi.productId
+      LEFT JOIN products p ON c.id = p.category_id
+      LEFT JOIN order_items oi ON p.id = oi.product_id
       GROUP BY c.id, c.name
       ORDER BY salesCount DESC
       LIMIT 5
@@ -34,10 +34,10 @@ export const getAdminDashboard = async (req, res) => {
 
     // Commandes récentes
     const recentOrders = await pool.query(`
-      SELECT o.id, o.userId, u.email, o.totalPrice, o.status, o.createdAt
+      SELECT o.id, o.user_id, u.email, o.total_price, o.status, o.created_at
       FROM orders o
-      JOIN users u ON o.userId = u.id
-      ORDER BY o.createdAt DESC
+      JOIN users u ON o.user_id = u.id
+      ORDER BY o.created_at DESC
       LIMIT 10
     `);
 
@@ -78,13 +78,13 @@ export const getSalesStats = async (req, res) => {
 
     const stats = await pool.query(`
       SELECT 
-        DATE(createdAt) as date,
+        DATE(created_at) as date,
         COUNT(*) as orderCount,
-        SUM(totalPrice) as totalRevenue,
-        COUNT(DISTINCT userId) as uniqueCustomers
+        SUM(total_price) as totalRevenue,
+        COUNT(DISTINCT user_id) as uniqueCustomers
       FROM orders
-      WHERE createdAt >= NOW() - ${dateFilter}
-      GROUP BY DATE(createdAt)
+      WHERE created_at >= NOW() - ${dateFilter}
+      GROUP BY DATE(created_at)
       ORDER BY date DESC
     `);
 
@@ -101,9 +101,9 @@ export const getOrderDetails = async (req, res) => {
     const { orderId } = req.params;
 
     const order = await pool.query(`
-      SELECT o.*, u.email, u.firstName, u.lastName, u.phone, u.address
+      SELECT o.*, u.email, u.first_name, u.last_name, u.phone, u.address
       FROM orders o
-      JOIN users u ON o.userId = u.id
+      JOIN users u ON o.user_id = u.id
       WHERE o.id = $1
     `, [orderId]);
 
@@ -112,10 +112,10 @@ export const getOrderDetails = async (req, res) => {
     }
 
     const items = await pool.query(`
-      SELECT oi.*, p.name, p.price, p.image
+      SELECT oi.*, p.name, p.price
       FROM order_items oi
-      JOIN products p ON oi.productId = p.id
-      WHERE oi.orderId = $1
+      JOIN products p ON oi.product_id = p.id
+      WHERE oi.order_id = $1
     `, [orderId]);
 
     res.json({
@@ -143,15 +143,15 @@ export const updateOrderStatus = async (req, res) => {
       params.push(status);
     }
     if (paymentStatus) {
-      updates.push(`paymentStatus = $${paramIndex++}`);
+      updates.push(`payment_status = $${paramIndex++}`);
       params.push(paymentStatus);
     }
     if (trackingNumber) {
-      updates.push(`trackingNumber = $${paramIndex++}`);
+      updates.push(`tracking_number = $${paramIndex++}`);
       params.push(trackingNumber);
     }
 
-    updates.push(`updatedAt = CURRENT_TIMESTAMP`);
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
 
     const query = `UPDATE orders SET ${updates.join(', ')} WHERE id = $1 RETURNING *`;
     const result = await pool.query(query, params);
@@ -171,7 +171,7 @@ export const updateOrderStatus = async (req, res) => {
 export const getAllOrders = async (req, res) => {
   try {
     const { status, limit = 50, offset = 0 } = req.query;
-    let query = 'SELECT o.*, u.email, u.firstName, u.lastName FROM orders o JOIN users u ON o.userId = u.id WHERE 1=1';
+    let query = 'SELECT o.*, u.email, u.first_name, u.last_name FROM orders o JOIN users u ON o.user_id = u.id WHERE 1=1';
     const params = [];
 
     if (status) {
@@ -179,7 +179,7 @@ export const getAllOrders = async (req, res) => {
       params.push(status);
     }
 
-    query += ' ORDER BY o.createdAt DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
+    query += ' ORDER BY o.created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(limit, offset);
 
     const result = await pool.query(query, params);

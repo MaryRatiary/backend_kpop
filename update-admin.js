@@ -8,8 +8,8 @@ const updateAdminUser = async () => {
   try {
     const email = 'maryratiary12@gmail.com';
     const password = 'qwertyuiop123';
-    const firstName = 'Admin';
-    const lastName = 'User';
+    const first_name = 'Admin';
+    const last_name = 'User';
 
     // Hasher le mot de passe
     console.log('🔐 Hachage du mot de passe en cours...');
@@ -17,8 +17,8 @@ const updateAdminUser = async () => {
 
     // Mettre à jour l'utilisateur admin
     const result = await pool.query(
-      'UPDATE users SET password = $1, firstName = $2, lastName = $3, role = $4 WHERE email = $5 RETURNING id, email, firstName, lastName, role',
-      [hashedPassword, firstName, lastName, 'admin', email]
+      'UPDATE users SET password = $1, first_name = $2, last_name = $3, role = $4 WHERE email = $5 RETURNING id, email, first_name, last_name, role',
+      [hashedPassword, first_name, last_name, 'admin', email]
     );
 
     if (result.rows.length === 0) {
@@ -29,7 +29,7 @@ const updateAdminUser = async () => {
     const user = result.rows[0];
     console.log('✅ Utilisateur admin mis à jour avec succès !');
     console.log('📧 Email:', user.email);
-    console.log('👤 Nom:', user.firstName, user.lastName);
+    console.log('👤 Nom:', user.first_name, user.last_name);
     console.log('🔑 Rôle:', user.role);
     console.log('🆔 ID:', user.id);
     console.log('✓ Le mot de passe a été hashé automatiquement avec bcrypt');

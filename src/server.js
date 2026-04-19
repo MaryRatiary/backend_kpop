@@ -3,6 +3,7 @@ import corsMiddleware from './middleware/cors.js';
 import dotenv from 'dotenv';
 import pool from './config/database.js';
 import runMigrations from './utils/runMigrations.js';
+import { initializeDatabase } from './utils/initializeDB.js';
 
 // Importer les routes
 import authRoutes from './routes/auth.js';
@@ -104,6 +105,9 @@ async function startServer() {
       process.exit(1);
     }
 
+    // Initialiser la base de données (créer l'utilisateur admin si nécessaire)
+    await initializeDatabase();
+
     // Afficher les infos du serveur
     console.log(`🌍 Environnement: ${NODE_ENV}`);
     if (NODE_ENV === 'production') {
@@ -127,7 +131,7 @@ async function startServer() {
       console.log(`🌍 Environnement: ${NODE_ENV}`);
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
       console.log(`🔗 Frontend URL: ${frontendUrl}`);
-      console.log(`�� Shopify Integration: ${shopifyUrl ? '✅ Activée' : '❌ Désactivée'}`);
+      console.log(`🛍 Shopify Integration: ${shopifyUrl ? '✅ Activée' : '❌ Désactivée'}`);
       console.log('\n');
     });
   } catch (error) {
