@@ -6,7 +6,6 @@
   "scripts": {
     "fix-db": "node scripts/fix-db.js",
     "force-rebuild-db": "node scripts/force-rebuild-db.js",
-    "prestart": "npm run fix-db",
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
