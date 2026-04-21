@@ -1,11 +1,6 @@
--- ============================================================
--- Migration 052 - Contrainte UNIQUE product_id sur shopify_products
--- (Pour les bases existantes où la table existe déjà sans contrainte)
--- ============================================================
-
 BEGIN;
 
--- Créer les tables Shopify si elles n'existent pas encore
+-- Tables Shopify (inchangées)
 CREATE TABLE IF NOT EXISTS shopify_products (
   id SERIAL PRIMARY KEY,
   product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
@@ -53,6 +48,15 @@ CREATE TABLE IF NOT EXISTS shopify_refunds (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- ⚠️ NOUVEAU : supprimer les doublons sur product_id avant d'ajouter la contrainte
+-- Garde la ligne la plus récente (synced_at DESC) pour chaque product_id dupliqué
+DELETE FROM shopify_products
+WHERE id NOT IN (
+  SELECT DISTINCT ON (product_id) id
+  FROM shopify_products
+  ORDER BY product_id, synced_at DESC NULLS LAST
+);
+
 -- Ajouter la contrainte UNIQUE sur product_id si elle n'existe pas
 DO $$
 BEGIN
@@ -65,7 +69,6 @@ BEGIN
   END IF;
 END $$;
 
--- Index utiles
 CREATE INDEX IF NOT EXISTS idx_shopify_products_product_id ON shopify_products(product_id);
 CREATE INDEX IF NOT EXISTS idx_shopify_products_shopify_id ON shopify_products(shopify_id);
 

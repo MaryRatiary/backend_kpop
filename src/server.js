@@ -25,7 +25,10 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 
 // ============================================================
 // MIDDLEWARE WEBHOOKS SHOPIFY
-// Doit être AVANT express.json() pour capturer le rawBody
+// Doit être AVANT express.json() pour capturer le rawBody.
+// On parse manuellement le body et on appelle next() directement
+// pour éviter que express.json() global retente de lire le stream
+// déjà consommé (erreur "stream is not readable").
 // ============================================================
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/shopify/webhooks')) {
@@ -35,7 +38,16 @@ app.use((req, res, next) => {
     });
     req.on('end', () => {
       req.rawBody = rawBody;
-      express.json({ limit: '50mb' })(req, res, next);
+      try {
+        req.body = JSON.parse(rawBody);
+      } catch (e) {
+        req.body = {};
+      }
+      next(); // on passe directement, sans appeler express.json()
+    });
+    req.on('error', (err) => {
+      console.error('Erreur lecture stream webhook:', err.message);
+      res.status(400).json({ error: 'Erreur lecture du body' });
     });
   } else {
     next();
@@ -44,10 +56,19 @@ app.use((req, res, next) => {
 
 // ============================================================
 // MIDDLEWARE GÉNÉRAUX
+// express.json() est skippé pour les routes webhook (déjà parsées)
 // ============================================================
 app.use(corsMiddleware);
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/shopify/webhooks')) return next();
+  express.json({ limit: '50mb' })(req, res, next);
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/shopify/webhooks')) return next();
+  express.urlencoded({ limit: '50mb', extended: true })(req, res, next);
+});
 
 // Logging
 app.use((req, res, next) => {
@@ -121,9 +142,9 @@ app.use((req, res) => {
 // ENREGISTREMENT AUTOMATIQUE DES WEBHOOKS SHOPIFY
 // ============================================================
 async function registerShopifyWebhooks() {
-  const shopifyUrl  = process.env.SHOPIFY_SHOP_URL;
+  const shopifyUrl   = process.env.SHOPIFY_SHOP_URL;
   const shopifyToken = process.env.SHOPIFY_ACCESS_TOKEN;
-  const backendUrl  = process.env.BACKEND_URL;
+  const backendUrl   = process.env.BACKEND_URL;
 
   if (!shopifyUrl || !shopifyToken) {
     console.log('⏭️  Shopify non configuré, webhooks ignorés');
@@ -205,7 +226,7 @@ async function startServer() {
     }
 
     // 5. Infos Shopify
-    const shopifyUrl  = process.env.SHOPIFY_SHOP_URL;
+    const shopifyUrl   = process.env.SHOPIFY_SHOP_URL;
     const shopifyToken = process.env.SHOPIFY_ACCESS_TOKEN;
     if (shopifyUrl && shopifyToken) {
       console.log('\n🔍 Configuration Shopify:');
