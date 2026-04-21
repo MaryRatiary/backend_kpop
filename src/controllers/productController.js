@@ -1,5 +1,6 @@
 import pool from '../config/database.js';
 import { formatProductData, formatProductsArray } from '../utils/dataFormatter.js';
+import shopifySync from '../services/shopifySync.js';
 
 // Obtenir tous les produits
 export const getAllProducts = async (req, res) => {
@@ -34,8 +35,6 @@ export const getAllProducts = async (req, res) => {
       query += ' AND p.featured = true';
     }
 
-    // ✅ CORRIGÉ: Math.min supprimé — la limite est maintenant respectée telle quelle
-    // Avant : Math.min(parseInt(limit) || 50, 100) → bloquait à 100 produits max
     query += ' ORDER BY p.created_at DESC LIMIT $' + (params.length + 1) + ' OFFSET $' + (params.length + 2);
     params.push(parseInt(limit) || 50000, parseInt(offset) || 0);
 
@@ -88,7 +87,7 @@ export const getProductById = async (req, res) => {
   }
 };
 
-// Créer un produit (Admin)
+// Créer un produit (Admin) - AVEC SYNC SHOPIFY
 export const createProduct = async (req, res) => {
   try {
     const { 
@@ -99,7 +98,8 @@ export const createProduct = async (req, res) => {
       category_id, 
       stock,
       sizes,
-      colors
+      colors,
+      syncToShopify = true
     } = req.body;
 
     if (!name || !price) {
@@ -157,6 +157,16 @@ export const createProduct = async (req, res) => {
     `, [product_id]);
 
     const formatted = formatProductData(completeProduct.rows[0]);
+
+    // Synchroniser avec Shopify en arrière-plan
+    if (syncToShopify && process.env.SHOPIFY_SHOP_URL) {
+      setImmediate(() => {
+        shopifySync.syncProductById(product_id)
+          .then(() => console.log(`✅ Produit ${product_id} synchronisé avec Shopify`))
+          .catch(err => console.error(`❌ Erreur sync Shopify produit ${product_id}:`, err.message));
+      });
+    }
+
     res.status(201).json(formatted);
   } catch (err) {
     console.error('Create product error:', err);
@@ -164,7 +174,7 @@ export const createProduct = async (req, res) => {
   }
 };
 
-// Mettre à jour un produit (Admin)
+// Mettre à jour un produit (Admin) - AVEC SYNC SHOPIFY
 export const updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
@@ -177,7 +187,8 @@ export const updateProduct = async (req, res) => {
       stock,
       featured,
       sizes,
-      colors
+      colors,
+      syncToShopify = true
     } = req.body;
 
     if (!id || isNaN(id)) {
@@ -293,6 +304,16 @@ export const updateProduct = async (req, res) => {
     `, [parseInt(id)]);
 
     const formatted = formatProductData(completeProduct.rows[0]);
+
+    // Synchroniser avec Shopify en arrière-plan
+    if (syncToShopify && process.env.SHOPIFY_SHOP_URL) {
+      setImmediate(() => {
+        shopifySync.syncProductById(parseInt(id))
+          .then(() => console.log(`✅ Produit ${id} synchronisé avec Shopify`))
+          .catch(err => console.error(`❌ Erreur sync Shopify produit ${id}:`, err.message));
+      });
+    }
+
     res.json(formatted);
   } catch (err) {
     console.error('Update product error:', err);
@@ -495,6 +516,7 @@ export const updateColorStock = async (req, res) => {
     res.status(500).json({ error: 'Erreur lors de la mise à jour du stock' });
   }
 };
+
 // Obtenir un produit par slug avec tous les détails
 export const getProductBySlug = async (req, res) => {
   try {

@@ -12,6 +12,9 @@ import categoriesRoutes from './routes/categories.js';
 import ordersRoutes from './routes/orders.js';
 import cartRoutes from './routes/cart.js';
 import checkoutRoutes from './routes/checkout.js';
+import shopifyCheckoutRoutes from './routes/shopify-checkout.js';
+import shopifyPaymentRoutes from './routes/shopify-payment.js';
+import paymentRoutes from './routes/payment-shopify.js';
 import dashboardRoutes from './routes/dashboard.js';
 
 dotenv.config();
@@ -94,6 +97,9 @@ app.use('/api/categories', categoriesRoutes);
 app.use('/api/orders', ordersRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/checkout', checkoutRoutes);
+app.use('/api/shopify-payment', shopifyPaymentRoutes);
+app.use('/api/payment', paymentRoutes);
+app.use('/api/shopify-checkout', shopifyCheckoutRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // Gestion des erreurs 404

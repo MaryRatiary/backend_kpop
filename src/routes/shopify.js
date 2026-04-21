@@ -46,7 +46,6 @@ router.get('/health', async (req, res) => {
  */
 router.post('/webhooks/orders/create', async (req, res) => {
   try {
-    // Vérifier la signature
     if (!shopifyWebhooks.verifyWebhookSignature(req)) {
       console.warn('⚠️ Signature webhook invalide');
       return res.status(401).json({ error: 'Signature invalide' });
@@ -143,6 +142,86 @@ router.post('/webhooks/refunds/create', async (req, res) => {
 });
 
 /**
+ * POST /api/shopify/webhooks/products/create
+ * Webhook: Nouveau produit créé sur Shopify
+ */
+router.post('/webhooks/products/create', async (req, res) => {
+  try {
+    if (!shopifyWebhooks.verifyWebhookSignature(req)) {
+      return res.status(401).json({ error: 'Signature invalide' });
+    }
+
+    const product = req.body;
+    await shopifyWebhooks.handleProductCreated(product);
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Erreur webhook product/create:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/shopify/webhooks/products/update
+ * Webhook: Produit mis à jour sur Shopify
+ */
+router.post('/webhooks/products/update', async (req, res) => {
+  try {
+    if (!shopifyWebhooks.verifyWebhookSignature(req)) {
+      return res.status(401).json({ error: 'Signature invalide' });
+    }
+
+    const product = req.body;
+    await shopifyWebhooks.handleProductUpdated(product);
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Erreur webhook product/update:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/shopify/webhooks/products/delete
+ * Webhook: Produit supprimé sur Shopify
+ */
+router.post('/webhooks/products/delete', async (req, res) => {
+  try {
+    if (!shopifyWebhooks.verifyWebhookSignature(req)) {
+      return res.status(401).json({ error: 'Signature invalide' });
+    }
+
+    const product = req.body;
+    await shopifyWebhooks.handleProductDeleted(product);
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Erreur webhook product/delete:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/shopify/webhooks/inventory/update
+ * Webhook: Mise à jour d'inventaire
+ */
+router.post('/webhooks/inventory/update', async (req, res) => {
+  try {
+    if (!shopifyWebhooks.verifyWebhookSignature(req)) {
+      return res.status(401).json({ error: 'Signature invalide' });
+    }
+
+    const inventory = req.body;
+    await shopifyWebhooks.handleInventoryUpdate(inventory);
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Erreur webhook inventory/update:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
  * ============================================
  * ROUTES ADMIN - SYNCHRONISATION
  * ============================================
@@ -150,18 +229,45 @@ router.post('/webhooks/refunds/create', async (req, res) => {
 
 /**
  * POST /api/shopify/sync/products
- * Synchroniser les produits vers Shopify (Admin)
+ * Synchroniser TOUS les produits vers Shopify (Admin)
  */
 router.post('/sync/products', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
-    const result = await shopifySync.syncProductsToShopify();
+    const { limit } = req.body;
+    console.log(`🚀 Démarrage synchronisation produits (limite: ${limit || 'AUCUNE'})`);
+    
+    const result = await shopifySync.syncProductsToShopify(limit);
     res.json({ 
       success: true,
-      message: `${result.synced} produits synchronisés`,
+      message: `✅ ${result.synced}/${result.total} produits synchronisés`,
+      synced: result.synced,
+      failed: result.failed,
+      total: result.total,
+      errors: result.errors
+    });
+  } catch (error) {
+    console.error('❌ Erreur synchronisation produits:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * POST /api/shopify/sync/products/:productId
+ * Synchroniser un produit unique vers Shopify (Admin)
+ */
+router.post('/sync/products/:productId', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    const { productId } = req.params;
+    console.log(`🚀 Synchronisation produit ${productId}`);
+    
+    const result = await shopifySync.syncProductById(parseInt(productId));
+    res.json({ 
+      success: true,
+      message: result.message,
       ...result
     });
   } catch (error) {
-    console.error('Erreur synchronisation produits:', error);
+    console.error(`❌ Erreur synchronisation produit ${productId}:`, error);
     res.status(500).json({ error: error.message });
   }
 });

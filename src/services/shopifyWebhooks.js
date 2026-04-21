@@ -98,7 +98,7 @@ class ShopifyWebhooks {
    */
   async handleOrderPaid(order) {
     try {
-      console.log(`💰 Paiement confirmé: ${order.id}`);
+      console.log(`�� Paiement confirmé: ${order.id}`);
 
       await pool.query(
         `UPDATE shopify_orders 
@@ -156,6 +156,84 @@ class ShopifyWebhooks {
       return { success: true, refundId: refund.id };
     } catch (error) {
       console.error('Erreur traitement refund:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Traiter un webhook de création de produit
+   */
+  async handleProductCreated(product) {
+    try {
+      console.log(`✨ Nouveau produit Shopify: ${product.id}`);
+
+      await pool.query(
+        `INSERT INTO shopify_products (shopify_id, title, synced_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (shopify_id) DO UPDATE SET
+          title = $2,
+          synced_at = NOW()`,
+        [product.id, product.title]
+      );
+
+      return { success: true, productId: product.id };
+    } catch (error) {
+      console.error('Erreur traitement création produit:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Traiter un webhook de mise à jour de produit
+   */
+  async handleProductUpdated(product) {
+    try {
+      console.log(`🔄 Produit Shopify mis à jour: ${product.id}`);
+
+      await pool.query(
+        `UPDATE shopify_products 
+         SET title = $1, synced_at = NOW()
+         WHERE shopify_id = $2`,
+        [product.title, product.id]
+      );
+
+      return { success: true, productId: product.id };
+    } catch (error) {
+      console.error('Erreur traitement mise à jour produit:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Traiter un webhook de suppression de produit
+   */
+  async handleProductDeleted(product) {
+    try {
+      console.log(`🗑️ Produit Shopify supprimé: ${product.id}`);
+
+      await pool.query(
+        `DELETE FROM shopify_products 
+         WHERE shopify_id = $1`,
+        [product.id]
+      );
+
+      return { success: true, productId: product.id };
+    } catch (error) {
+      console.error('Erreur traitement suppression produit:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Traiter un webhook de mise à jour d'inventaire
+   */
+  async handleInventoryUpdate(inventory) {
+    try {
+      console.log(`📦 Mise à jour inventaire: ${inventory.inventory_item_id}`);
+
+      return { success: true, inventoryId: inventory.inventory_item_id };
+    } catch (error) {
+      console.error('Erreur traitement mise à jour inventaire:', error.message);
       throw error;
     }
   }
