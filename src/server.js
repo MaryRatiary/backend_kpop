@@ -27,25 +27,21 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 // MIDDLEWARE WEBHOOKS SHOPIFY
 // Doit être AVANT express.json() pour capturer le rawBody
 // ============================================================
-// APRÈS - correct
 app.use((req, res, next) => {
   if (req.path.startsWith('/api/shopify/webhooks')) {
-    express.raw({ type: 'application/json', limit: '50mb' })(req, res, (err) => {
-      if (err) return next(err);
-      if (Buffer.isBuffer(req.body)) {
-        req.rawBody = req.body.toString('utf8');
-        try {
-          req.body = JSON.parse(req.rawBody);
-        } catch (e) {
-          req.body = {};
-        }
-      }
-      next();
+    let rawBody = '';
+    req.on('data', chunk => {
+      rawBody += chunk.toString('utf8');
+    });
+    req.on('end', () => {
+      req.rawBody = rawBody;
+      express.json({ limit: '50mb' })(req, res, next);
     });
   } else {
     next();
   }
 });
+
 // ============================================================
 // MIDDLEWARE GÉNÉRAUX
 // ============================================================
@@ -229,9 +225,9 @@ async function startServer() {
       console.log(`🛍  Shopify Integration: ${shopifyUrl ? '✅ Activée' : '❌ Désactivée'}\n`);
     });
 
-    // 7. Enregistrer les webhooks Shopify APRÈS le démarrage
-    //    (en arrière-plan, ne bloque pas le serveur)
-    await registerShopifyWebhooks();
+    // 7. Webhooks Shopify — désactivé car enregistrés manuellement dans Shopify
+    // Pour ré-activer: décommenter la ligne ci-dessous
+    // await registerShopifyWebhooks();
 
   } catch (error) {
     console.error('❌ Erreur au démarrage du serveur:', error);
