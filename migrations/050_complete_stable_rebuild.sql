@@ -288,12 +288,15 @@ VALUES ('050_complete_stable_rebuild', CURRENT_TIMESTAMP);
 
 COMMIT;
 
--- Migration 051 - Tables Shopify manquantes
+-- ============================================================
+-- Migration 051 - Tables Shopify + contrainte UNIQUE product_id
+-- ============================================================
+
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS shopify_products (
   id SERIAL PRIMARY KEY,
-  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  product_id INTEGER UNIQUE REFERENCES products(id) ON DELETE SET NULL,
   shopify_id BIGINT UNIQUE NOT NULL,
   title VARCHAR(255),
   synced_at TIMESTAMP DEFAULT NOW(),
@@ -342,6 +345,21 @@ CREATE INDEX IF NOT EXISTS idx_shopify_products_product_id ON shopify_products(p
 CREATE INDEX IF NOT EXISTS idx_shopify_products_shopify_id ON shopify_products(shopify_id);
 
 INSERT INTO schema_migrations (name) VALUES ('051_shopify_tables')
+ON CONFLICT (name) DO NOTHING;
+
+COMMIT;
+
+-- ============================================================
+-- Migration 052 - Contrainte UNIQUE product_id sur shopify_products
+-- (Pour les bases existantes où la table 051 existe déjà sans contrainte)
+-- ============================================================
+
+BEGIN;
+
+ALTER TABLE shopify_products
+  ADD CONSTRAINT IF NOT EXISTS shopify_products_product_id_unique UNIQUE (product_id);
+
+INSERT INTO schema_migrations (name) VALUES ('052_shopify_products_unique_product_id')
 ON CONFLICT (name) DO NOTHING;
 
 COMMIT;
