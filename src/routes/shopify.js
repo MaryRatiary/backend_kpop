@@ -20,16 +20,16 @@ const router = express.Router();
 router.get('/health', async (req, res) => {
   try {
     const shop = await shopifyClient.testConnection();
-    res.json({ 
+    res.json({
       status: 'connected',
       shop: shop.name,
       domain: shop.domain,
-      email: shop.email
+      email: shop.email,
     });
   } catch (error) {
-    res.status(500).json({ 
-      status: 'error', 
-      message: 'Impossible de se connecter à Shopify' 
+    res.status(500).json({
+      status: 'error',
+      message: 'Impossible de se connecter à Shopify',
     });
   }
 });
@@ -50,10 +50,8 @@ router.post('/webhooks/orders/create', async (req, res) => {
       console.warn('⚠️ Signature webhook invalide');
       return res.status(401).json({ error: 'Signature invalide' });
     }
-
     const order = req.body;
     await shopifyWebhooks.handleOrderCreated(order);
-
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Erreur webhook order/create:', error);
@@ -70,10 +68,8 @@ router.post('/webhooks/orders/updated', async (req, res) => {
     if (!shopifyWebhooks.verifyWebhookSignature(req)) {
       return res.status(401).json({ error: 'Signature invalide' });
     }
-
     const order = req.body;
     await shopifyWebhooks.handleOrderUpdated(order);
-
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Erreur webhook order/updated:', error);
@@ -90,10 +86,8 @@ router.post('/webhooks/orders/paid', async (req, res) => {
     if (!shopifyWebhooks.verifyWebhookSignature(req)) {
       return res.status(401).json({ error: 'Signature invalide' });
     }
-
     const order = req.body;
     await shopifyWebhooks.handleOrderPaid(order);
-
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Erreur webhook order/paid:', error);
@@ -110,10 +104,8 @@ router.post('/webhooks/fulfillments/create', async (req, res) => {
     if (!shopifyWebhooks.verifyWebhookSignature(req)) {
       return res.status(401).json({ error: 'Signature invalide' });
     }
-
     const fulfillment = req.body;
     await shopifyWebhooks.handleFulfillmentCreated(fulfillment);
-
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Erreur webhook fulfillment/create:', error);
@@ -130,10 +122,8 @@ router.post('/webhooks/refunds/create', async (req, res) => {
     if (!shopifyWebhooks.verifyWebhookSignature(req)) {
       return res.status(401).json({ error: 'Signature invalide' });
     }
-
     const refund = req.body;
     await shopifyWebhooks.handleRefundCreated(refund);
-
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Erreur webhook refund/create:', error);
@@ -150,10 +140,8 @@ router.post('/webhooks/products/create', async (req, res) => {
     if (!shopifyWebhooks.verifyWebhookSignature(req)) {
       return res.status(401).json({ error: 'Signature invalide' });
     }
-
     const product = req.body;
     await shopifyWebhooks.handleProductCreated(product);
-
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Erreur webhook product/create:', error);
@@ -170,10 +158,8 @@ router.post('/webhooks/products/update', async (req, res) => {
     if (!shopifyWebhooks.verifyWebhookSignature(req)) {
       return res.status(401).json({ error: 'Signature invalide' });
     }
-
     const product = req.body;
     await shopifyWebhooks.handleProductUpdated(product);
-
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Erreur webhook product/update:', error);
@@ -190,10 +176,8 @@ router.post('/webhooks/products/delete', async (req, res) => {
     if (!shopifyWebhooks.verifyWebhookSignature(req)) {
       return res.status(401).json({ error: 'Signature invalide' });
     }
-
     const product = req.body;
     await shopifyWebhooks.handleProductDeleted(product);
-
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Erreur webhook product/delete:', error);
@@ -210,13 +194,111 @@ router.post('/webhooks/inventory/update', async (req, res) => {
     if (!shopifyWebhooks.verifyWebhookSignature(req)) {
       return res.status(401).json({ error: 'Signature invalide' });
     }
-
     const inventory = req.body;
     await shopifyWebhooks.handleInventoryUpdate(inventory);
-
     res.status(200).json({ success: true });
   } catch (error) {
     console.error('Erreur webhook inventory/update:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * ============================================
+ * ROUTES ADMIN - ENREGISTREMENT DES WEBHOOKS
+ * ============================================
+ */
+
+/**
+ * POST /api/shopify/webhooks/register
+ * Enregistrer tous les webhooks produits dans Shopify (Admin)
+ * À appeler UNE SEULE FOIS après le déploiement
+ */
+router.post('/webhooks/register', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    const baseUrl = process.env.BACKEND_URL;
+
+    if (!baseUrl) {
+      return res.status(500).json({
+        error: 'BACKEND_URL manquant dans les variables d\'environnement',
+      });
+    }
+
+    const webhooksToRegister = [
+      { topic: 'products/create',          address: `${baseUrl}/api/shopify/webhooks/products/create` },
+      { topic: 'products/update',          address: `${baseUrl}/api/shopify/webhooks/products/update` },
+      { topic: 'products/delete',          address: `${baseUrl}/api/shopify/webhooks/products/delete` },
+      { topic: 'inventory_levels/update',  address: `${baseUrl}/api/shopify/webhooks/inventory/update` },
+    ];
+
+    // Récupérer les webhooks déjà enregistrés pour éviter les doublons
+    const existing = await shopifyClient.getWebhooks();
+    const existingAddresses = existing.map(w => w.address);
+
+    const results = [];
+
+    for (const wh of webhooksToRegister) {
+      if (existingAddresses.includes(wh.address)) {
+        console.log(`⏭️  Webhook déjà existant: ${wh.topic}`);
+        results.push({ topic: wh.topic, status: 'already_exists', address: wh.address });
+        continue;
+      }
+
+      try {
+        const created = await shopifyClient.createWebhook(wh.topic, wh.address);
+        console.log(`✅ Webhook enregistré: ${wh.topic} → ${wh.address}`);
+        results.push({ topic: wh.topic, status: 'created', id: created.id, address: wh.address });
+      } catch (err) {
+        console.error(`❌ Erreur création webhook ${wh.topic}:`, err.message);
+        results.push({ topic: wh.topic, status: 'error', reason: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `${results.filter(r => r.status === 'created').length} webhook(s) enregistré(s)`,
+      results,
+    });
+  } catch (error) {
+    console.error('❌ Erreur enregistrement webhooks:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/shopify/webhooks/list
+ * Lister tous les webhooks enregistrés dans Shopify (Admin)
+ */
+router.get('/webhooks/list', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    const webhooks = await shopifyClient.getWebhooks();
+    res.json({
+      success: true,
+      total: webhooks.length,
+      webhooks: webhooks.map(w => ({
+        id: w.id,
+        topic: w.topic,
+        address: w.address,
+        created_at: w.created_at,
+      })),
+    });
+  } catch (error) {
+    console.error('❌ Erreur récupération webhooks:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/shopify/webhooks/:webhookId
+ * Supprimer un webhook Shopify (Admin)
+ */
+router.delete('/webhooks/:webhookId', authenticateToken, authorizeAdmin, async (req, res) => {
+  try {
+    const { webhookId } = req.params;
+    await shopifyClient.deleteWebhook(webhookId);
+    res.json({ success: true, message: `Webhook ${webhookId} supprimé` });
+  } catch (error) {
+    console.error('❌ Erreur suppression webhook:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -235,15 +317,15 @@ router.post('/sync/products', authenticateToken, authorizeAdmin, async (req, res
   try {
     const { limit } = req.body;
     console.log(`🚀 Démarrage synchronisation produits (limite: ${limit || 'AUCUNE'})`);
-    
+
     const result = await shopifySync.syncProductsToShopify(limit);
-    res.json({ 
+    res.json({
       success: true,
       message: `✅ ${result.synced}/${result.total} produits synchronisés`,
       synced: result.synced,
       failed: result.failed,
       total: result.total,
-      errors: result.errors
+      errors: result.errors,
     });
   } catch (error) {
     console.error('❌ Erreur synchronisation produits:', error);
@@ -259,15 +341,15 @@ router.post('/sync/products/:productId', authenticateToken, authorizeAdmin, asyn
   try {
     const { productId } = req.params;
     console.log(`🚀 Synchronisation produit ${productId}`);
-    
+
     const result = await shopifySync.syncProductById(parseInt(productId));
-    res.json({ 
+    res.json({
       success: true,
       message: result.message,
-      ...result
+      ...result,
     });
   } catch (error) {
-    console.error(`❌ Erreur synchronisation produit ${productId}:`, error);
+    console.error(`❌ Erreur synchronisation produit ${req.params.productId}:`, error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -279,10 +361,10 @@ router.post('/sync/products/:productId', authenticateToken, authorizeAdmin, asyn
 router.post('/sync/orders', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const result = await shopifySync.syncOrdersFromShopify();
-    res.json({ 
+    res.json({
       success: true,
       message: `${result.synced} commandes synchronisées`,
-      ...result
+      ...result,
     });
   } catch (error) {
     console.error('Erreur synchronisation commandes:', error);
@@ -303,9 +385,9 @@ router.post('/sync/orders', authenticateToken, authorizeAdmin, async (req, res) 
 router.get('/analytics/sales', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const metrics = await shopifySync.getSalesMetrics();
-    res.json({ 
+    res.json({
       success: true,
-      data: metrics
+      data: metrics,
     });
   } catch (error) {
     console.error('Erreur récupération métriques:', error);
@@ -326,10 +408,10 @@ router.get('/orders', authenticateToken, authorizeAdmin, async (req, res) => {
       LIMIT 100
     `);
 
-    res.json({ 
+    res.json({
       success: true,
       total: result.rows.length,
-      orders: result.rows
+      orders: result.rows,
     });
   } catch (error) {
     console.error('Erreur récupération commandes:', error);
@@ -345,10 +427,11 @@ router.get('/orders/:orderId', authenticateToken, authorizeAdmin, async (req, re
   try {
     const { orderId } = req.params;
 
-    const order = await pool.query(
-      'SELECT * FROM shopify_orders WHERE id = $1',
-      [orderId]
-    );
+    const order = await pool.query('SELECT * FROM shopify_orders WHERE id = $1', [orderId]);
+
+    if (order.rows.length === 0) {
+      return res.status(404).json({ error: 'Commande non trouvée' });
+    }
 
     const items = await pool.query(
       'SELECT * FROM shopify_order_items WHERE shopify_order_id = $1',
@@ -360,11 +443,11 @@ router.get('/orders/:orderId', authenticateToken, authorizeAdmin, async (req, re
       [order.rows[0].shopify_order_id]
     );
 
-    res.json({ 
+    res.json({
       success: true,
       order: order.rows[0],
       items: items.rows,
-      shipment: shipment.rows[0] || null
+      shipment: shipment.rows[0] || null,
     });
   } catch (error) {
     console.error('Erreur récupération détails commande:', error);
@@ -379,10 +462,10 @@ router.get('/orders/:orderId', authenticateToken, authorizeAdmin, async (req, re
 router.get('/customers', authenticateToken, authorizeAdmin, async (req, res) => {
   try {
     const customers = await shopifyClient.getCustomers(100);
-    res.json({ 
+    res.json({
       success: true,
       total: customers.length,
-      customers
+      customers,
     });
   } catch (error) {
     console.error('Erreur récupération clients:', error);

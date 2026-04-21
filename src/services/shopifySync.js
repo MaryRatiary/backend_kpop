@@ -22,9 +22,9 @@ class ShopifySync {
         [dbProduct.id]
       );
 
-      // Récupérer les couleurs
+      // Récupérer les couleurs — snake_case pour correspondre à la migration 050
       const colorsResult = await pool.query(
-        'SELECT id, colorName, colorHex, stock FROM product_colors WHERE product_id = $1',
+        'SELECT id, color_name, color_hex, stock FROM product_colors WHERE product_id = $1',
         [dbProduct.id]
       );
 
@@ -38,12 +38,12 @@ class ShopifySync {
         for (const color of colors) {
           for (const size of sizes) {
             variants.push({
-              title: `${size.size} / ${color.colorName}`,
+              title: `${size.size} / ${color.color_name}`,
               price: dbProduct.price.toString(),
               sku: `SINOA-${dbProduct.id}-${size.id}-${color.id}`,
               inventory_quantity: size.stock + color.stock,
               option1: size.size,
-              option2: color.colorName,
+              option2: color.color_name,
               requires_shipping: true,
             });
           }
@@ -62,11 +62,11 @@ class ShopifySync {
       } else if (colors.length > 0) {
         for (const color of colors) {
           variants.push({
-            title: color.colorName,
+            title: color.color_name,
             price: dbProduct.price.toString(),
             sku: `SINOA-${dbProduct.id}-${color.id}`,
             inventory_quantity: color.stock,
-            option1: color.colorName,
+            option1: color.color_name,
             requires_shipping: true,
           });
         }
@@ -85,15 +85,15 @@ class ShopifySync {
         alt: `${dbProduct.name} - Image ${index + 1}`,
       }));
 
-      // Construire les options produit
+      // Construire les options produit — color_name corrigé ici aussi
       const options = [];
       if (sizes.length > 0 && colors.length > 0) {
         options.push({ name: 'Taille', values: sizes.map(s => s.size) });
-        options.push({ name: 'Couleur', values: colors.map(c => c.colorName) });
+        options.push({ name: 'Couleur', values: colors.map(c => c.color_name) });
       } else if (sizes.length > 0) {
         options.push({ name: 'Taille', values: sizes.map(s => s.size) });
       } else if (colors.length > 0) {
-        options.push({ name: 'Couleur', values: colors.map(c => c.colorName) });
+        options.push({ name: 'Couleur', values: colors.map(c => c.color_name) });
       }
 
       // Construire le produit Shopify

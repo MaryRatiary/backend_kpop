@@ -160,29 +160,25 @@ class ShopifyWebhooks {
     }
   }
 
-  /**
-   * Traiter un webhook de création de produit
-   */
   async handleProductCreated(product) {
     try {
       console.log(`✨ Nouveau produit Shopify: ${product.id}`);
-
+  
       await pool.query(
         `INSERT INTO shopify_products (shopify_id, title, synced_at)
          VALUES ($1, $2, NOW())
          ON CONFLICT (shopify_id) DO UPDATE SET
           title = $2,
           synced_at = NOW()`,
-        [product.id, product.title]
+        [product.id, product.title]  // ✅ pas de product_id local ici
       );
-
+  
       return { success: true, productId: product.id };
     } catch (error) {
       console.error('Erreur traitement création produit:', error.message);
       throw error;
     }
   }
-
   /**
    * Traiter un webhook de mise à jour de produit
    */

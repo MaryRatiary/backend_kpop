@@ -287,3 +287,61 @@ INSERT INTO schema_migrations (name, applied_at)
 VALUES ('050_complete_stable_rebuild', CURRENT_TIMESTAMP);
 
 COMMIT;
+
+-- Migration 051 - Tables Shopify manquantes
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS shopify_products (
+  id SERIAL PRIMARY KEY,
+  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+  shopify_id BIGINT UNIQUE NOT NULL,
+  title VARCHAR(255),
+  synced_at TIMESTAMP DEFAULT NOW(),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS shopify_orders (
+  id SERIAL PRIMARY KEY,
+  shopify_order_id BIGINT UNIQUE NOT NULL,
+  customer_email VARCHAR(255),
+  total_price VARCHAR(50),
+  currency VARCHAR(10),
+  status VARCHAR(50),
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS shopify_order_items (
+  id SERIAL PRIMARY KEY,
+  shopify_order_id BIGINT NOT NULL,
+  product_title VARCHAR(255),
+  quantity INTEGER,
+  price VARCHAR(50),
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS shopify_shipments (
+  id SERIAL PRIMARY KEY,
+  shopify_order_id BIGINT UNIQUE NOT NULL,
+  tracking_number VARCHAR(255),
+  status VARCHAR(50),
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS shopify_refunds (
+  id SERIAL PRIMARY KEY,
+  shopify_order_id BIGINT NOT NULL,
+  amount VARCHAR(50),
+  reason TEXT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_shopify_products_product_id ON shopify_products(product_id);
+CREATE INDEX IF NOT EXISTS idx_shopify_products_shopify_id ON shopify_products(shopify_id);
+
+INSERT INTO schema_migrations (name) VALUES ('051_shopify_tables')
+ON CONFLICT (name) DO NOTHING;
+
+COMMIT;
