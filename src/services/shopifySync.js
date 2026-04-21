@@ -3,10 +3,9 @@ import shopifyClient from './shopifyClient.js';
 
 class ShopifySync {
 
-  /**
-   * Upsert dans shopify_products sans ON CONFLICT
-   * Compatible même sans contrainte UNIQUE sur product_id
-   */
+  // ============================================================
+  // UPSERT SHOPIFY PRODUCT (sans doublon)
+  // ============================================================
   async upsertShopifyProduct(productId, shopifyId) {
     const existing = await pool.query(
       'SELECT id FROM shopify_products WHERE product_id = $1',
@@ -25,6 +24,9 @@ class ShopifySync {
     }
   }
 
+  // ============================================================
+  // CONSTRUIRE LE PAYLOAD SHOPIFY (avec catégorie complète)
+  // ============================================================
   async buildShopifyProduct(dbProduct) {
     try {
       const imagesResult = await pool.query(
@@ -40,10 +42,14 @@ class ShopifySync {
         [dbProduct.id]
       );
 
+      // Récupérer la hiérarchie complète des catégories
+      const categoryChain = await this.getCategoryChain(dbProduct.category_id);
+
       const images = imagesResult.rows;
       const sizes = sizesResult.rows;
       const colors = colorsResult.rows;
 
+      // Variants
       const variants = [];
       if (sizes.length > 0 && colors.length > 0) {
         for (const color of colors) {
@@ -90,11 +96,13 @@ class ShopifySync {
         });
       }
 
+      // Images
       const shopifyImages = images.map((img, index) => ({
         src: img.image_url,
         alt: `${dbProduct.name} - Image ${index + 1}`,
       }));
 
+      // Options
       const options = [];
       if (sizes.length > 0 && colors.length > 0) {
         options.push({ name: 'Taille', values: sizes.map(s => s.size) });
@@ -105,21 +113,28 @@ class ShopifySync {
         options.push({ name: 'Couleur', values: colors.map(c => c.color_name) });
       }
 
+      // Tags : kpop + merchandise + toute la chaîne de catégories
+      const tags = ['kpop', 'merchandise'];
+      for (const cat of categoryChain) {
+        if (cat && cat.trim() !== '') tags.push(cat.trim());
+      }
+
+      // product_type = catégorie racine si disponible
+      const productType = categoryChain.length > 0
+        ? categoryChain[0]
+        : 'K-POP Merchandise';
+
       const productData = {
         title: dbProduct.name,
         body_html: dbProduct.description || '',
         vendor: 'Sinoa KPOP',
-        product_type: 'K-POP Merchandise',
+        product_type: productType,
         variants,
         images: shopifyImages,
         options,
         published: true,
-        tags: ['kpop', 'merchandise'],
+        tags: [...new Set(tags)], // pas de doublons dans les tags
       };
-
-      if (dbProduct.category_name) {
-        productData.tags.push(dbProduct.category_name);
-      }
 
       return productData;
     } catch (error) {
@@ -128,6 +143,37 @@ class ShopifySync {
     }
   }
 
+  // ============================================================
+  // RÉCUPÉRER LA CHAÎNE DE CATÉGORIES (ex: ["Vêtements", "Sweats"])
+  // ============================================================
+  async getCategoryChain(categoryId) {
+    if (!categoryId) return [];
+
+    try {
+      // Remonte la hiérarchie via parent_id récursif
+      const result = await pool.query(`
+        WITH RECURSIVE cat_chain AS (
+          SELECT id, name, parent_id, 0 AS depth
+          FROM categories
+          WHERE id = $1
+          UNION ALL
+          SELECT c.id, c.name, c.parent_id, cc.depth + 1
+          FROM categories c
+          INNER JOIN cat_chain cc ON c.id = cc.parent_id
+        )
+        SELECT name FROM cat_chain ORDER BY depth DESC
+      `, [categoryId]);
+
+      return result.rows.map(r => r.name);
+    } catch (err) {
+      console.error('Erreur getCategoryChain:', err.message);
+      return [];
+    }
+  }
+
+  // ============================================================
+  // SYNC TOUS LES PRODUITS → SHOPIFY (sans doublons)
+  // ============================================================
   async syncProductsToShopify(limit = null) {
     try {
       console.log('🔄 Synchronisation de TOUS les produits vers Shopify...');
@@ -154,18 +200,35 @@ class ShopifySync {
           const existingShopifyId = await this.getShopifyProductId(product.id);
 
           if (existingShopifyId) {
-            console.log(`🔄 Mise à jour produit Shopify: ${existingShopifyId}`);
-            await shopifyClient.updateProduct(existingShopifyId, productData);
+            // Vérifier que le produit existe encore sur Shopify
+            try {
+              await shopifyClient.updateProduct(existingShopifyId, productData);
+              console.log(`🔄 Mis à jour: ${product.name} (Shopify ID: ${existingShopifyId})`);
+            } catch (err) {
+              if (err.response?.status === 404 || err.message?.includes('404')) {
+                // Produit supprimé sur Shopify → supprimer le lien et recréer
+                console.log(`⚠️  Produit ${existingShopifyId} introuvable sur Shopify, recréation...`);
+                await pool.query('DELETE FROM shopify_products WHERE product_id = $1', [product.id]);
+                const shopifyProduct = await shopifyClient.createProduct(productData);
+                await this.upsertShopifyProduct(product.id, shopifyProduct.id);
+                console.log(`✅ Recréé: ${product.name} (Shopify ID: ${shopifyProduct.id})`);
+              } else {
+                throw err;
+              }
+            }
           } else {
-            console.log(`✨ Création produit Shopify: ${product.name}`);
+            console.log(`✨ Création: ${product.name}`);
             const shopifyProduct = await shopifyClient.createProduct(productData);
             await this.upsertShopifyProduct(product.id, shopifyProduct.id);
-            console.log(`✅ Produit créé: ${shopifyProduct.id}`);
+            console.log(`✅ Créé: ${product.name} (Shopify ID: ${shopifyProduct.id})`);
           }
 
           synced++;
+
+          // Petite pause pour ne pas dépasser le rate limit Shopify (2 req/sec)
+          await new Promise(r => setTimeout(r, 500));
         } catch (error) {
-          console.error(`❌ Erreur synchronisation produit ${product.id}:`, error.message);
+          console.error(`❌ Erreur sync produit ${product.id} (${product.name}):`, error.message);
           errors.push({ productId: product.id, productName: product.name, error: error.message });
           failed++;
         }
@@ -180,6 +243,9 @@ class ShopifySync {
     }
   }
 
+  // ============================================================
+  // SYNC UN PRODUIT PAR SON ID LOCAL
+  // ============================================================
   async syncProductById(productId) {
     try {
       console.log(`🔄 Synchronisation produit ${productId}`);
@@ -199,8 +265,20 @@ class ShopifySync {
       const existingShopifyId = await this.getShopifyProductId(productId);
 
       if (existingShopifyId) {
-        await shopifyClient.updateProduct(existingShopifyId, productData);
-        console.log(`✅ Produit Shopify mis à jour: ${existingShopifyId}`);
+        try {
+          await shopifyClient.updateProduct(existingShopifyId, productData);
+          console.log(`✅ Produit Shopify mis à jour: ${existingShopifyId}`);
+        } catch (err) {
+          if (err.response?.status === 404 || err.message?.includes('404')) {
+            // Produit supprimé sur Shopify → recréer
+            await pool.query('DELETE FROM shopify_products WHERE product_id = $1', [productId]);
+            const shopifyProduct = await shopifyClient.createProduct(productData);
+            await this.upsertShopifyProduct(productId, shopifyProduct.id);
+            console.log(`✅ Produit Shopify recréé: ${shopifyProduct.id}`);
+          } else {
+            throw err;
+          }
+        }
       } else {
         const shopifyProduct = await shopifyClient.createProduct(productData);
         await this.upsertShopifyProduct(productId, shopifyProduct.id);
@@ -214,6 +292,9 @@ class ShopifySync {
     }
   }
 
+  // ============================================================
+  // SYNC COMMANDES DEPUIS SHOPIFY
+  // ============================================================
   async syncOrdersFromShopify() {
     try {
       console.log('🔄 Synchronisation des commandes depuis Shopify...');
@@ -232,24 +313,34 @@ class ShopifySync {
               `INSERT INTO shopify_orders 
               (shopify_order_id, customer_email, total_price, currency, status, created_at)
               VALUES ($1, $2, $3, $4, $5, $6)`,
-              [order.id, order.customer?.email || 'unknown@example.com', order.total_price, order.currency, order.financial_status, new Date(order.created_at)]
+              [
+                order.id,
+                order.customer?.email || 'unknown@example.com',
+                order.total_price,
+                order.currency,
+                order.financial_status,
+                new Date(order.created_at),
+              ]
             );
           }
           synced++;
         } catch (error) {
-          console.error(`❌ Erreur synchronisation commande ${order.id}:`, error.message);
+          console.error(`❌ Erreur sync commande ${order.id}:`, error.message);
           failed++;
         }
       }
 
-      console.log(`✅ Synchronisation commandes terminée: ${synced} réussi(s), ${failed} échoué(s)`);
+      console.log(`✅ Sync commandes: ${synced} réussi(s), ${failed} échoué(s)`);
       return { synced, failed };
     } catch (error) {
-      console.error('Erreur lors de la synchronisation des commandes:', error.message);
+      console.error('Erreur synchronisation commandes:', error.message);
       throw error;
     }
   }
 
+  // ============================================================
+  // HELPERS
+  // ============================================================
   async getShopifyProductId(productId) {
     const result = await pool.query(
       'SELECT shopify_id FROM shopify_products WHERE product_id = $1',
@@ -274,7 +365,7 @@ class ShopifySync {
       `);
       return result.rows;
     } catch (error) {
-      console.error('Erreur lors de la récupération des métriques:', error.message);
+      console.error('Erreur métriques:', error.message);
       throw error;
     }
   }

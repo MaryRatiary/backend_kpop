@@ -43,7 +43,7 @@ app.use((req, res, next) => {
       } catch (e) {
         req.body = {};
       }
-      next(); // on passe directement, sans appeler express.json()
+      next();
     });
     req.on('error', (err) => {
       console.error('Erreur lecture stream webhook:', err.message);
@@ -139,6 +139,36 @@ app.use((req, res) => {
 });
 
 // ============================================================
+// SYNCHRO AUTOMATIQUE SHOPIFY AU DÉMARRAGE
+// Lance la synchro complète DB → Shopify après le démarrage du serveur
+// sans bloquer le démarrage (fire and forget).
+// ============================================================
+async function runInitialShopifySync() {
+  const shopifyUrl   = process.env.SHOPIFY_SHOP_URL;
+  const shopifyToken = process.env.SHOPIFY_ACCESS_TOKEN;
+
+  if (!shopifyUrl || !shopifyToken) {
+    console.log('⏭️  Shopify non configuré, synchro initiale ignorée');
+    return;
+  }
+
+  try {
+    const { default: shopifySync } = await import('./services/shopifySync.js');
+
+    console.log('\n🛍️  Synchro automatique Shopify au démarrage...');
+    const result = await shopifySync.syncProductsToShopify();
+    console.log(`🛍️  Synchro terminée: ${result.synced}/${result.total} produits envoyés vers Shopify`);
+
+    if (result.errors && result.errors.length > 0) {
+      console.warn(`⚠️  ${result.errors.length} produit(s) en erreur:`);
+      result.errors.forEach(e => console.warn(`   - ${e.productName} (ID ${e.productId}): ${e.error}`));
+    }
+  } catch (err) {
+    console.warn('⚠️  Synchro Shopify initiale échouée (le serveur continue):', err.message);
+  }
+}
+
+// ============================================================
 // ENREGISTREMENT AUTOMATIQUE DES WEBHOOKS SHOPIFY
 // ============================================================
 async function registerShopifyWebhooks() {
@@ -153,11 +183,9 @@ async function registerShopifyWebhooks() {
 
   if (!backendUrl) {
     console.warn('⚠️  BACKEND_URL manquant — webhooks Shopify non enregistrés automatiquement');
-    console.warn('   Ajoutez BACKEND_URL=https://backend-kpop-9wn7.onrender.com dans vos variables d\'env');
     return;
   }
 
-  // Import dynamique pour éviter les imports circulaires au niveau module
   const { default: shopifyClient } = await import('./services/shopifyClient.js');
 
   const webhooksToRegister = [
@@ -188,8 +216,7 @@ async function registerShopifyWebhooks() {
 
     console.log('');
   } catch (err) {
-    // Ne pas crasher le serveur si Shopify est inaccessible au démarrage
-    console.warn('⚠️  Impossible d\'enregistrer les webhooks Shopify au démarrage:', err.message);
+    console.warn('⚠️  Impossible d\'enregistrer les webhooks Shopify:', err.message);
   }
 }
 
@@ -244,9 +271,15 @@ async function startServer() {
       const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
       console.log(`🔗 Frontend URL: ${frontendUrl}`);
       console.log(`🛍  Shopify Integration: ${shopifyUrl ? '✅ Activée' : '❌ Désactivée'}\n`);
+
+      // 7. Lancer la synchro Shopify en arrière-plan APRÈS que le serveur est prêt
+      //    setImmediate garantit que le serveur répond avant de commencer la synchro
+      setImmediate(() => {
+        runInitialShopifySync();
+      });
     });
 
-    // 7. Webhooks Shopify — désactivé car enregistrés manuellement dans Shopify
+    // 8. Webhooks Shopify — désactivé car enregistrés manuellement dans Shopify
     // Pour ré-activer: décommenter la ligne ci-dessous
     // await registerShopifyWebhooks();
 
